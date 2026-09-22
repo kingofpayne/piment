@@ -1,0 +1,863 @@
+use super::font::TextHorizontalAlign;
+use crate::buffer::DynamicBuffer;
+use crate::color::Color;
+use crate::font::Font;
+use crate::font::TextLayout;
+use crate::rect::IRect;
+use crate::rect::Rect;
+use crate::vertex::Vertex;
+use glam::{Mat4, UVec2, Vec2, Vec4, vec4};
+use std::{collections::BTreeMap, ops::Range};
+use wgpu::{
+    AddressMode, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor,
+    BlendOperation, BlendState, BufferBindingType, BufferSize, BufferUsages, ColorTargetState,
+    ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Device, FilterMode,
+    FragmentState, IndexFormat, MultisampleState, PipelineLayoutDescriptor, PrimitiveState, Queue,
+    RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
+    ShaderSource, ShaderStages, StencilState, Texture, TextureFormat, TextureViewDescriptor,
+    TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState,
+    VertexStepMode,
+    util::{BufferInitDescriptor, DeviceExt},
+};
+
+/// Enables easy drawing in the window using WGPU. Implements basic primitive rendering such as
+/// lines, circles, round rectangles, text...
+///
+/// Shapes are painted by drawing triangles with specific shaders. For instance, a round rectangle
+/// is a quad (two triangles) with a shader based on Signed Distance Field rendering. By using
+/// shaders, the rendered shapes have antialiasing.
+///
+/// Shapes to be rendered are accumulated in buffers, and sent to the GPU at the end.
+pub struct Painter {
+    /// WGPU Device. Required to create new pipelines on the fly.
+    device: Device,
+    /// Surface format. Required to create new pipelines on the fly.
+    target_texture_format: TextureFormat,
+    /// For each required rendering configuration we need a different GPU pipeline.
+    /// Creating a pipeline is an expensive operation (especially due to shader compilation and
+    /// validation), so we prefer creating once and caching it there.
+    pipelines: BTreeMap<PipelineConfig, RenderResources>,
+    /// Current chunk being built.
+    chunk: Chunk,
+    /// List of rendering chunks which have been commited.
+    /// Each chunk stores vertices to be rendered, associated textures and shaders, etc.
+    chunks: Vec<Chunk>,
+    /// All vertices of all chunks
+    /// Filled when the widgets are rendering, then copied in `vertex_buffer` for transfering them
+    /// to the GPU.
+    vertices: Vec<Vertex>,
+    /// Vertex buffer used for all primitives to be rendered.
+    /// For each frame, vertices are copied in this buffer.
+    /// The buffer is reallocated when too small.
+    vertex_buffer: DynamicBuffer,
+    /// All vertex indices of all chunks.
+    /// Filled when the widgets are rendering, then copied in `index_buffer` for transfering them
+    /// to the GPU.
+    indices: Vec<u32>,
+    /// Index buffer used for all primitives to be rendered.
+    /// For each frame, indices are copied in this buffer.
+    /// The buffer is reallocated when too small.
+    index_buffer: DynamicBuffer,
+    /// Surface size.
+    pub size: UVec2,
+    /// Matrix to transform painter coordinates to screen coordinates.
+    /// Usually an orthographic transform created from screen size.
+    pub projection_matrix: Mat4,
+    /// All new drawing operations are clipped using this region rect.
+    pub scissor: IRect,
+}
+
+impl Painter {
+    const INITIAL_VERTEX_BUFFER_SIZE: u64 = 1024 * size_of::<Vertex>() as u64;
+    const INITIAL_INDEX_BUFFER_SIZE: u64 = 1024 * size_of::<u32>() as u64;
+
+    pub fn new(device: &Device, target_texture_format: TextureFormat, size: UVec2) -> Self {
+        Self {
+            device: device.clone(),
+            target_texture_format,
+            pipelines: BTreeMap::new(),
+            chunk: Default::default(),
+            chunks: Vec::new(),
+            vertices: Vec::new(),
+            vertex_buffer: DynamicBuffer::new(
+                device,
+                Self::INITIAL_VERTEX_BUFFER_SIZE,
+                BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            ),
+            indices: Vec::new(),
+            index_buffer: DynamicBuffer::new(
+                device,
+                Self::INITIAL_INDEX_BUFFER_SIZE,
+                BufferUsages::INDEX | BufferUsages::COPY_DST,
+            ),
+            size,
+            projection_matrix: Mat4::IDENTITY,
+            scissor: IRect::new(0, 0, i32::MAX, i32::MAX),
+        }
+    }
+
+    /// Commits current chunk and starts a new one.
+    fn commit(&mut self) {
+        if !self.chunk.indices_range.is_empty() {
+            self.chunks.push(self.chunk.clone());
+        }
+        let start = self.vertices.len();
+        self.chunk.vertex_range = start..start;
+        let start = self.indices.len();
+        self.chunk.indices_range = start..start;
+    }
+
+    pub fn begin(&mut self, mut config: ChunkConfig) {
+        config.scissor = config.scissor.intersection(self.scissor);
+        if config != self.chunk.config {
+            self.commit();
+            self.chunk.config = config;
+        }
+    }
+
+    pub fn prepare_render(&mut self, queue: &Queue) {
+        // Finish pending chunk
+        self.commit();
+        self.vertex_buffer
+            .write_slice(&self.device, queue, &self.vertices);
+        self.index_buffer
+            .write_slice(&self.device, queue, &self.indices);
+    }
+
+    /// Renders all stored chunks, and clear them.
+    pub fn render(&mut self, pass: &mut RenderPass) {
+        // Create missing pipelines.
+        // We can't do it in render_chunk because of the borrowing rules.
+        for chunk in self.chunks.iter() {
+            let resources = self
+                .pipelines
+                .entry(chunk.config.pipeline.clone())
+                .or_insert_with(|| {
+                    RenderResources::new(
+                        &self.device,
+                        self.target_texture_format,
+                        &chunk.config.pipeline,
+                    )
+                });
+            pass.set_pipeline(&resources.pipeline);
+        }
+        for chunk in self.chunks.iter() {
+            // Fetch the pipeline corresponding to the rendering configuration.
+            // If the pipeline does not exist yet, create it and cache it.
+            self.render_chunk(pass, chunk);
+        }
+        self.chunks.clear();
+        self.vertices.clear();
+        self.indices.clear();
+        self.chunk.vertex_range = 0..0;
+        self.chunk.indices_range = 0..0;
+    }
+
+    /// Renders one chunk. Don't submit the queue yet.
+    fn render_chunk(&self, pass: &mut RenderPass, chunk: &Chunk) {
+        let uniform_buf = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(self.projection_matrix.as_ref()),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+        let uniform_buf_fragment_settings = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(chunk.config.fragment_settings.as_ref()),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let resources = self.pipelines.get(&chunk.config.pipeline).unwrap();
+        pass.set_pipeline(&resources.pipeline);
+
+        let mut entries = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: uniform_buf.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: uniform_buf_fragment_settings.as_entire_binding(),
+            },
+        ];
+
+        // Early declaration of texture_view and sampler to allow them live long enough when they
+        // are required.
+        let texture_view;
+        let sampler;
+
+        if chunk.config.pipeline.texture {
+            texture_view = chunk
+                .config
+                .texture
+                .as_ref()
+                .unwrap()
+                .create_view(&TextureViewDescriptor::default());
+            sampler = self.device.create_sampler(&SamplerDescriptor {
+                label: None,
+                address_mode_u: AddressMode::ClampToEdge,
+                address_mode_v: AddressMode::ClampToEdge,
+                address_mode_w: AddressMode::ClampToEdge,
+                mag_filter: chunk.config.texture_filter_mode,
+                min_filter: chunk.config.texture_filter_mode,
+                mipmap_filter: FilterMode::Nearest,
+                ..Default::default()
+            });
+            entries.push(BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&texture_view),
+            });
+            entries.push(BindGroupEntry {
+                binding: 3,
+                resource: BindingResource::Sampler(&sampler),
+            });
+        }
+
+        pass.set_bind_group(
+            0,
+            &self.device.create_bind_group(&BindGroupDescriptor {
+                label: None,
+                layout: &resources.bind_group_layout,
+                entries: &entries,
+            }),
+            &[],
+        );
+
+        pass.set_index_buffer(self.index_buffer.inner.slice(..), IndexFormat::Uint32);
+        pass.set_vertex_buffer(0, self.vertex_buffer.inner.slice(..));
+        pass.set_scissor_rect(
+            chunk.config.scissor.x1.max(0) as u32,
+            chunk.config.scissor.y1.max(0) as u32,
+            (chunk.config.scissor.width() as u32).min(self.size.x),
+            (chunk.config.scissor.height() as u32).min(self.size.y),
+        );
+        pass.draw_indexed(
+            chunk.indices_range.start as u32..chunk.indices_range.end as u32,
+            0,
+            0..1,
+        );
+    }
+
+    /// Paints a triangle from vertices `a`, `b` and `c`.
+    pub fn triangle(&mut self, a: Vertex, b: Vertex, c: Vertex) {
+        let i = self.vertices.len() as u32;
+        self.vertices.extend_from_slice(&[a, b, c]);
+        self.indices.extend_from_slice(&[i, i + 1, i + 2]);
+        self.chunk.vertex_range.end += 3;
+        self.chunk.indices_range.end += 3;
+    }
+
+    /// Paints a quad from vertices `a`, `b`, `c` and `d`.
+    pub fn quad(&mut self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
+        let i = self.vertices.len() as u32;
+        self.vertices.extend_from_slice(&[a, b, c, d]);
+        self.indices
+            .extend_from_slice(&[i, i + 1, i + 2, i, i + 2, i + 3]);
+        self.chunk.vertex_range.end += 4;
+        self.chunk.indices_range.end += 6;
+    }
+
+    /// Paint a rectangle at `rect` region.
+    pub fn rectangle(&mut self, rect: Rect, colors: [Color; 4]) {
+        self.begin(
+            ChunkConfig::default()
+                .shader("shader-col.wgsl")
+                .alpha_blending(true),
+        );
+        self.quad(
+            Vertex::from_vec(rect.x1y1()).color1(colors[0]),
+            Vertex::from_vec(rect.x1y2()).color1(colors[1]),
+            Vertex::from_vec(rect.x2y2()).color1(colors[2]),
+            Vertex::from_vec(rect.x2y1()).color1(colors[3]),
+        );
+    }
+
+    /// Paint a round rectangle at `rect` region.
+    ///
+    /// `outer_radius` specifies the external radius for each corner, in the following order:
+    /// top-left, bottom-left, bottom-right, top-right.
+    ///
+    /// `inner_radius` specifies the internal radius for each corner. If a radius is 2.0 less than
+    /// the outer radius, the line thickness of the rectangle border is 2.0.
+    ///
+    /// `colors` specified the color of each corner. If all values are the same, the rectangle has
+    /// a single color. Passing different values can create gradients.
+    pub fn round_rectangle(
+        &mut self,
+        rect: Rect,
+        outer_radius: Vec4,
+        inner_radius: Vec4,
+        colors: [Color; 4],
+    ) {
+        self.begin(
+            ChunkConfig::default()
+                .shader("line.wgsl")
+                .blend(Blend::Alpha)
+                .fragment_settings(vec4(2.0, 0.0, 0.0, 0.0)),
+        );
+        let center = rect.center();
+        let geom1 = vec4(center.x, center.y, rect.width() / 2.0, rect.height() / 2.0);
+        self.quad(
+            Vertex::from_vec(rect.x1y1())
+                .color1(colors[0])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+            Vertex::from_vec(rect.x1y2())
+                .color1(colors[1])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+            Vertex::from_vec(rect.x2y2())
+                .color1(colors[2])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+            Vertex::from_vec(rect.x2y1())
+                .color1(colors[3])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+        );
+    }
+
+    pub fn round_rectangle_texture(
+        &mut self,
+        rect: Rect,
+        outer_radius: Vec4,
+        inner_radius: Vec4,
+        colors: [Color; 4],
+        texture: Texture,
+    ) {
+        self.begin(
+            ChunkConfig::default()
+                .shader("line-tex.wgsl")
+                .with_texture(texture)
+                .blend(Blend::Alpha)
+                .fragment_settings(vec4(2.0, 0.0, 0.0, 0.0)),
+        );
+        let center = rect.center();
+        let geom1 = vec4(center.x, center.y, rect.width() / 2.0, rect.height() / 2.0);
+        self.quad(
+            Vertex::from_vec(rect.x1y1())
+                .uv(0.0, 0.0)
+                .color1(colors[0])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+            Vertex::from_vec(rect.x1y2())
+                .uv(0.0, 1.0)
+                .color1(colors[1])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+            Vertex::from_vec(rect.x2y2())
+                .uv(1.0, 1.0)
+                .color1(colors[2])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+            Vertex::from_vec(rect.x2y1())
+                .uv(1.0, 0.0)
+                .color1(colors[3])
+                .geom1_vec(geom1)
+                .geom2_vec(outer_radius)
+                .geom3_vec(inner_radius),
+        );
+    }
+
+    pub fn circle(&mut self, center: Vec2, outer_radius: f32, inner_radius: f32, color: Color) {
+        if outer_radius <= 0.0 {
+            return;
+        }
+        self.begin(
+            ChunkConfig::default()
+                .shader("line.wgsl")
+                .blend(Blend::Alpha)
+                .fragment_settings(vec4(1.0, 0.0, 0.0, 0.0)),
+        );
+        let z = inner_radius / outer_radius;
+        let w = 1.0 / outer_radius; // smoothstep width
+        self.quad(
+            Vertex::from_xy(center.x - outer_radius, center.y + outer_radius)
+                .geom1(-1.0, 1.0, z, w)
+                .color1(color),
+            Vertex::from_xy(center.x - outer_radius, center.y - outer_radius)
+                .geom1(-1.0, -1.0, z, w)
+                .color1(color),
+            Vertex::from_xy(center.x + outer_radius, center.y - outer_radius)
+                .geom1(1.0, -1.0, z, w)
+                .color1(color),
+            Vertex::from_xy(center.x + outer_radius, center.y + outer_radius)
+                .geom1(1.0, 1.0, z, w)
+                .color1(color),
+        );
+    }
+
+    /// Paints a segment without end caps.
+    pub fn segment_no_cap(&mut self, a: Vec2, b: Vec2, stroke: Stroke) {
+        if a == b {
+            return;
+        }
+        self.begin(
+            ChunkConfig::default()
+                .shader("line.wgsl")
+                .blend(Blend::Alpha),
+        );
+        let w = stroke.width + 1.0;
+        let u = (b - a).perp().normalize() * w * 0.5;
+        self.quad(
+            Vertex::from_vec(a + u)
+                .geom1(w, 0.0, 0.0, 0.0)
+                .color1(stroke.color),
+            Vertex::from_vec(a - u)
+                .geom1(0.0, w, 0.0, 0.0)
+                .color1(stroke.color),
+            Vertex::from_vec(b - u)
+                .geom1(0.0, w, 0.0, 0.0)
+                .color1(stroke.color),
+            Vertex::from_vec(b + u)
+                .geom1(w, 0.0, 0.0, 0.0)
+                .color1(stroke.color),
+        );
+    }
+
+    pub fn polyline(&mut self, points: &[Vec2], stroke: Stroke) {
+        let size = points.len();
+        for i in 0..size - 1 {
+            let a = points[i];
+            let b = points[(i + 1) % size];
+            self.segment_no_cap(a, b, stroke);
+        }
+    }
+
+    pub fn polygon(&mut self, points: &[Vec2], stroke: Stroke) {
+        let size = points.len();
+        for i in 0..size {
+            let a = points[i];
+            let b = points[(i + 1) % size];
+            self.segment_no_cap(a, b, stroke);
+        }
+    }
+
+    pub fn text(&mut self, font: &Font, text: &str, rect: Rect, style: FontStyle) {
+        if text.is_empty() {
+            return;
+        }
+        let layout = font.layout(text, rect, TextHorizontalAlign::Left, style.size);
+        self.text_layout(font, &layout, style);
+    }
+
+    pub fn text_layout(&mut self, font: &Font, layout: &TextLayout, style: FontStyle) {
+        if layout.glyphs.is_empty() {
+            return;
+        }
+        self.begin(
+            ChunkConfig::default()
+                .shader("font.wgsl")
+                .blend(Blend::Alpha)
+                .with_texture(font.texture().unwrap().clone()),
+        );
+        // Draw outline first.
+        // We cannot draw both the outline and the characters at the same time, because outlines
+        // overlap.
+        if style.outline_color.alpha() > 0.0 {
+            // The mask selects which color channel in the font atlas texture we want to use as an
+            // alpha channel for rendering the glyphs. The outline is the green channel in the
+            // texture.
+            //
+            // The mask is passed as color1.
+            // The drawing color is passed as color2.
+            let mask = Color::new_rgb(0.0, 1.0, 0.0);
+            for g in layout.glyphs.iter() {
+                self.quad(
+                    Vertex::from_xy(g.xy.x1, g.xy.y1)
+                        .uv(g.uv.x1, g.uv.y1)
+                        .color1(style.outline_color)
+                        .color2(mask),
+                    Vertex::from_xy(g.xy.x1, g.xy.y2)
+                        .uv(g.uv.x1, g.uv.y2)
+                        .color1(style.outline_color)
+                        .color2(mask),
+                    Vertex::from_xy(g.xy.x2, g.xy.y2)
+                        .uv(g.uv.x2, g.uv.y2)
+                        .color1(style.outline_color)
+                        .color2(mask),
+                    Vertex::from_xy(g.xy.x2, g.xy.y1)
+                        .uv(g.uv.x2, g.uv.y1)
+                        .color1(style.outline_color)
+                        .color2(mask),
+                );
+            }
+        }
+        // Draw the characters.
+        if style.color.alpha() > 0.0 {
+            let mask = Color::new_rgb(1.0, 0.0, 0.0);
+            for g in layout.glyphs.iter() {
+                self.quad(
+                    Vertex::from_xy(g.xy.x1, g.xy.y1)
+                        .uv(g.uv.x1, g.uv.y1)
+                        .color1(style.color)
+                        .color2(mask),
+                    Vertex::from_xy(g.xy.x1, g.xy.y2)
+                        .uv(g.uv.x1, g.uv.y2)
+                        .color1(style.color)
+                        .color2(mask),
+                    Vertex::from_xy(g.xy.x2, g.xy.y2)
+                        .uv(g.uv.x2, g.uv.y2)
+                        .color1(style.color)
+                        .color2(mask),
+                    Vertex::from_xy(g.xy.x2, g.xy.y1)
+                        .uv(g.uv.x2, g.uv.y1)
+                        .color1(style.color)
+                        .color2(mask),
+                );
+            }
+        }
+    }
+}
+
+/// Every setting for rendering triangles in a particular way.
+#[derive(Clone, PartialEq)]
+pub struct ChunkConfig {
+    /// Texture to be binded.
+    texture: Option<Texture>,
+    /// Texture filter mode.
+    texture_filter_mode: FilterMode,
+    /// Extra settings to be passed to the fragment shader.
+    fragment_settings: Vec4,
+    /// Configuration settings relative to the pipeline itself. This is separated so we can use
+    /// this value as a key to grab the correct pipeline to be enabled.
+    pipeline: PipelineConfig,
+    /// Scissor region.
+    /// Maxed by default (no clipping).
+    /// Enabling clipping shall be avoided whenever possible, because it reduces the possibility to
+    /// merge draw calls.
+    scissor: IRect,
+}
+
+impl ChunkConfig {
+    pub fn with_texture(mut self, texture: Texture) -> Self {
+        self.texture = Some(texture);
+        self.pipeline.texture = true;
+        self
+    }
+
+    pub fn with_texture_filter_mode(mut self, value: FilterMode) -> Self {
+        self.texture_filter_mode = value;
+        self
+    }
+
+    pub fn fragment_settings(mut self, value: Vec4) -> Self {
+        self.fragment_settings = value;
+        self
+    }
+
+    pub fn shader(mut self, path: &str) -> Self {
+        self.pipeline.shader = path.into();
+        self
+    }
+
+    pub fn with_depth_buffer(mut self) -> Self {
+        self.pipeline.depth_buffer = true;
+        self
+    }
+
+    pub fn depth_buffer(mut self, value: bool) -> Self {
+        self.pipeline.depth_buffer = value;
+        self
+    }
+
+    pub fn blend(mut self, value: Blend) -> Self {
+        self.pipeline.blend = value;
+        self
+    }
+
+    pub fn alpha_blending(mut self, value: bool) -> Self {
+        self.pipeline.blend = if value { Blend::Alpha } else { Blend::None };
+        self
+    }
+
+    pub fn with_scissor(self, scissor: IRect) -> Self {
+        Self { scissor, ..self }
+    }
+}
+
+impl Default for ChunkConfig {
+    fn default() -> Self {
+        Self {
+            texture: Default::default(),
+            texture_filter_mode: FilterMode::Linear,
+            fragment_settings: Default::default(),
+            pipeline: Default::default(),
+            scissor: IRect::new(0, 0, i32::MAX, i32::MAX),
+        }
+    }
+}
+
+/// Triangles to be rendered and configuration describing how to render it.
+#[derive(Default, Clone)]
+struct Chunk {
+    /// Vertice range in the global array.
+    vertex_range: Range<usize>,
+    /// Indices range in the global array.
+    indices_range: Range<usize>,
+    /// Rendering settings (texture, blending, etc.)
+    config: ChunkConfig,
+}
+
+/// WGPU resources required to paint using a particular method.
+pub struct RenderResources {
+    pub bind_group_layout: BindGroupLayout,
+    pub pipeline: RenderPipeline,
+}
+
+#[derive(Default, PartialOrd, Ord, PartialEq, Eq, Clone, Debug)]
+pub struct PipelineConfig {
+    /// Use of texture.
+    pub texture: bool,
+    /// Pipeline shader to be used.
+    pub shader: String,
+    /// Blending mode.
+    pub blend: Blend,
+    /// Use of Z-buffer.
+    pub depth_buffer: bool,
+}
+
+impl RenderResources {
+    const VERTEX_BUFFER_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout {
+        array_stride: size_of::<Vertex>() as u64,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[
+            // xyz
+            VertexAttribute {
+                format: VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            },
+            // uv
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 4 * 3,
+                shader_location: 1,
+            },
+            // color1
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 4 * 5,
+                shader_location: 2,
+            },
+            // color2
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 4 * 9,
+                shader_location: 3,
+            },
+            // geom1
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 4 * 13,
+                shader_location: 4,
+            },
+            // geom2
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 4 * 17,
+                shader_location: 5,
+            },
+            // geom3
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 4 * 21,
+                shader_location: 6,
+            },
+        ],
+    };
+
+    const MATRIX_BIND_GROUP_LAYOUT_ENTRY: BindGroupLayoutEntry = BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStages::VERTEX,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: BufferSize::new(64),
+        },
+        count: None,
+    };
+
+    /// Creates a pipeline for the given rendering settings.
+    pub fn new(
+        device: &Device,
+        target_texture_format: TextureFormat,
+        config: &PipelineConfig,
+    ) -> Self {
+        let mut entries = vec![
+            Self::MATRIX_BIND_GROUP_LAYOUT_ENTRY,
+            // Extra settings for shaders, passed as a vec4f.
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(16),
+                },
+                count: None,
+            },
+        ];
+        if config.texture {
+            entries.push(BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+            entries.push(BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            });
+        }
+        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: None,
+            entries: &entries,
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let vertex_buffer_layouts = [Self::VERTEX_BUFFER_LAYOUT];
+
+        let shader_source = std::fs::read_to_string(format!("shaders/{}", config.shader))
+            .expect("Failed to load shader source");
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: ShaderSource::Wgsl(shader_source.into()),
+        });
+
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffer_layouts,
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: target_texture_format,
+                    blend: match config.blend {
+                        Blend::None => None,
+                        Blend::Alpha => Some(BlendState::ALPHA_BLENDING),
+                        Blend::Additive => Some(BlendState {
+                            color: BlendComponent {
+                                src_factor: BlendFactor::SrcAlpha,
+                                dst_factor: BlendFactor::One,
+                                operation: BlendOperation::Add,
+                            },
+                            alpha: BlendComponent::REPLACE,
+                        }),
+                    },
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            primitive: PrimitiveState {
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: config.depth_buffer,
+                depth_compare: if config.depth_buffer {
+                    CompareFunction::Less
+                } else {
+                    CompareFunction::Always
+                },
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        Self {
+            bind_group_layout,
+            pipeline,
+        }
+    }
+}
+
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Blend {
+    #[default]
+    None,
+    Alpha,
+    Additive,
+}
+
+#[derive(Copy, Clone)]
+pub struct Stroke {
+    pub color: Color,
+    pub width: f32,
+}
+
+impl Stroke {
+    pub fn new(color: Color, width: f32) -> Self {
+        Self { color, width }
+    }
+}
+
+/// Default text size, in pixels.
+pub const DEFAULT_FONT_SIZE: i32 = 11;
+
+#[derive(Copy, Clone)]
+pub struct FontStyle {
+    pub color: Color,
+    /// Outline drawing color. Default is transparent.
+    pub outline_color: Color,
+    /// Text size. Must be one of the sizes built in the font atlas.
+    pub size: i32,
+}
+
+impl FontStyle {
+    pub fn new() -> Self {
+        Self {
+            color: Color::WHITE,
+            outline_color: Color::BLACK_TRANSPARENT,
+            size: DEFAULT_FONT_SIZE,
+        }
+    }
+
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = color;
+        self
+    }
+
+    pub fn outline_color(mut self, color: Color) -> Self {
+        self.outline_color = color;
+        self
+    }
+
+    pub fn size(mut self, size: i32) -> Self {
+        self.size = size;
+        self
+    }
+}
+
+impl Default for FontStyle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
