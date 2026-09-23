@@ -68,8 +68,5 @@ impl Widget for Panel {
             Vec4::splat(-1.0),
             [THEME.panel_color; 4],
         );
-        if let Some(child) = &mut self.child {
-            child.borrow_mut().render(graphics);
-        }
     }
 }
