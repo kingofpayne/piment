@@ -7,7 +7,7 @@ use crate::rect::IRect;
 use crate::rect::Rect;
 use crate::vertex::Vertex;
 use glam::{Mat4, UVec2, Vec2, Vec4, vec4};
-use std::{collections::BTreeMap, ops::Range};
+use std::{borrow::Cow, collections::BTreeMap, ops::Range, path::PathBuf};
 use wgpu::{
     AddressMode, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor,
@@ -261,7 +261,7 @@ impl Painter {
     pub fn rectangle(&mut self, rect: Rect, colors: [Color; 4]) {
         self.begin(
             ChunkConfig::default()
-                .shader("shader-col.wgsl")
+                .shader(BuiltinShader::ShaderCol)
                 .alpha_blending(true),
         );
         self.quad(
@@ -291,7 +291,7 @@ impl Painter {
     ) {
         self.begin(
             ChunkConfig::default()
-                .shader("line.wgsl")
+                .shader(BuiltinShader::Line)
                 .blend(Blend::Alpha)
                 .fragment_settings(vec4(2.0, 0.0, 0.0, 0.0)),
         );
@@ -331,7 +331,7 @@ impl Painter {
     ) {
         self.begin(
             ChunkConfig::default()
-                .shader("line-tex.wgsl")
+                .shader(BuiltinShader::LineTex)
                 .with_texture(texture)
                 .blend(Blend::Alpha)
                 .fragment_settings(vec4(2.0, 0.0, 0.0, 0.0)),
@@ -372,7 +372,7 @@ impl Painter {
         }
         self.begin(
             ChunkConfig::default()
-                .shader("line.wgsl")
+                .shader(BuiltinShader::Line)
                 .blend(Blend::Alpha)
                 .fragment_settings(vec4(1.0, 0.0, 0.0, 0.0)),
         );
@@ -401,7 +401,7 @@ impl Painter {
         }
         self.begin(
             ChunkConfig::default()
-                .shader("line.wgsl")
+                .shader(BuiltinShader::Line)
                 .blend(Blend::Alpha),
         );
         let w = stroke.width + 1.0;
@@ -454,7 +454,7 @@ impl Painter {
         }
         self.begin(
             ChunkConfig::default()
-                .shader("font.wgsl")
+                .shader(BuiltinShader::Font)
                 .blend(Blend::Alpha)
                 .with_texture(font.texture().unwrap().clone()),
         );
@@ -553,9 +553,17 @@ impl ChunkConfig {
         self
     }
 
-    pub fn shader(mut self, path: &str) -> Self {
-        self.pipeline.shader = path.into();
+    pub fn shader(mut self, shader: impl Into<Shader>) -> Self {
+        self.pipeline.shader = shader.into();
         self
+    }
+
+    pub fn shader_file(self, path: impl Into<PathBuf>) -> Self {
+        self.shader(Shader::File(path.into()))
+    }
+
+    pub fn shader_source(self, source: impl Into<Cow<'static, str>>) -> Self {
+        self.shader(Shader::Source(source.into()))
     }
 
     pub fn with_depth_buffer(mut self) -> Self {
@@ -612,12 +620,71 @@ pub struct RenderResources {
     pub pipeline: RenderPipeline,
 }
 
+/// Shaders shipped with the library, embedded in the binary.
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum BuiltinShader {
+    #[default]
+    ShaderCol,
+    Line,
+    LineTex,
+    Font,
+}
+
+/// WGSL shader used by a pipeline.
+///
+/// Custom shaders must provide `vs_main` and `fs_main` entry points, accept the [`Vertex`]
+/// attributes at locations 0 to 6, and use the bind group layout of the painter: the matrix
+/// uniform at binding 0, the fragment settings `vec4f` at binding 1, and when a texture is set,
+/// the texture at binding 2 and its sampler at binding 3.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Shader {
+    /// Shader shipped with the library.
+    Builtin(BuiltinShader),
+    /// WGSL file read when the pipeline is created. Relative paths resolve against the current
+    /// working directory.
+    File(PathBuf),
+    /// WGSL source, e.g. from `include_str!`.
+    Source(Cow<'static, str>),
+}
+
+impl Default for Shader {
+    fn default() -> Self {
+        Self::Builtin(BuiltinShader::default())
+    }
+}
+
+impl From<BuiltinShader> for Shader {
+    fn from(value: BuiltinShader) -> Self {
+        Self::Builtin(value)
+    }
+}
+
+impl Shader {
+    /// Returns the WGSL source of the shader.
+    pub fn wgsl(&self) -> Cow<'static, str> {
+        match self {
+            Self::Builtin(BuiltinShader::ShaderCol) => {
+                include_str!("../shaders/shader-col.wgsl").into()
+            }
+            Self::Builtin(BuiltinShader::Line) => include_str!("../shaders/line.wgsl").into(),
+            Self::Builtin(BuiltinShader::LineTex) => {
+                include_str!("../shaders/line-tex.wgsl").into()
+            }
+            Self::Builtin(BuiltinShader::Font) => include_str!("../shaders/font.wgsl").into(),
+            Self::File(path) => std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("Failed to load shader source {}: {e}", path.display()))
+                .into(),
+            Self::Source(source) => source.clone(),
+        }
+    }
+}
+
 #[derive(Default, PartialOrd, Ord, PartialEq, Eq, Clone, Debug)]
 pub struct PipelineConfig {
     /// Use of texture.
     pub texture: bool,
     /// Pipeline shader to be used.
-    pub shader: String,
+    pub shader: Shader,
     /// Blending mode.
     pub blend: Blend,
     /// Use of Z-buffer.
@@ -736,11 +803,9 @@ impl RenderResources {
 
         let vertex_buffer_layouts = [Self::VERTEX_BUFFER_LAYOUT];
 
-        let shader_source = std::fs::read_to_string(format!("shaders/{}", config.shader))
-            .expect("Failed to load shader source");
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: ShaderSource::Wgsl(shader_source.into()),
+            source: ShaderSource::Wgsl(config.shader.wgsl()),
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
