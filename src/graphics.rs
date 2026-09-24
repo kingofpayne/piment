@@ -1,4 +1,4 @@
-use crate::{font::Font, painter::Painter, theme::THEME};
+use crate::{event::CustomEvent, font::Font, painter::Painter, theme::THEME};
 use glam::uvec2;
 use pollster::FutureExt;
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use wgpu::{
     InstanceDescriptor, PresentMode, Queue, Surface, SurfaceConfiguration, Texture,
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
-use winit::{dpi::PhysicalSize, window::Window};
+use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
 pub struct Graphics {
     pub window: Arc<Window>,
@@ -20,10 +20,13 @@ pub struct Graphics {
     pub texture_depth: Texture,
     pub painter: Painter,
     pub font: Font,
+    /// Sends custom event to winit main event loop.
+    /// Can be used by threads to wake-up and notify main loop.
+    pub proxy: EventLoopProxy<CustomEvent>,
 }
 
 impl Graphics {
-    pub fn new(window: Arc<Window>) -> Self {
+    pub fn new(window: Arc<Window>, proxy: EventLoopProxy<CustomEvent>) -> Self {
         let instance = wgpu::Instance::new(&InstanceDescriptor::default());
 
         let mut adapters: Vec<_> = instance.enumerate_adapters(Backends::PRIMARY);
@@ -81,6 +84,7 @@ impl Graphics {
             texture_depth,
             painter,
             font,
+            proxy,
         }
     }
 

@@ -1,4 +1,5 @@
 use crate::{
+    event::CustomEvent,
     graphics::Graphics,
     input::Input,
     rect::Rect,
@@ -13,13 +14,14 @@ use wgpu::{
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::Window,
 };
 
 pub mod axis;
 pub mod buffer;
 pub mod color;
+pub mod event;
 pub mod font;
 pub mod graphics;
 pub mod input;
@@ -35,14 +37,16 @@ struct App {
     graphics: Option<Graphics>,
     input: Input,
     root: Root,
+    proxy: EventLoopProxy<CustomEvent>,
 }
 
 impl App {
-    fn new(widget: SharedWidget) -> Self {
+    fn new(widget: SharedWidget, proxy: EventLoopProxy<CustomEvent>) -> Self {
         Self {
             graphics: None,
             input: Input::new(),
             root: Root::new(widget),
+            proxy,
         }
     }
 
@@ -107,20 +111,20 @@ impl App {
     }
 }
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+impl ApplicationHandler<CustomEvent> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
                 .create_window(Window::default_attributes())
                 .unwrap(),
         );
-        self.graphics = Some(Graphics::new(window.clone()));
+        self.graphics = Some(Graphics::new(window.clone(), self.proxy.clone()));
         window.request_redraw();
     }
 
     fn window_event(
         &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
@@ -153,8 +157,8 @@ impl ApplicationHandler for App {
 }
 
 pub fn run_widget(widget: SharedWidget) {
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop: EventLoop<CustomEvent> = EventLoop::with_user_event().build().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(widget);
+    let mut app = App::new(widget, event_loop.create_proxy());
     event_loop.run_app(&mut app).unwrap();
 }
