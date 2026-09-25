@@ -17,7 +17,7 @@ use winit::{
     dpi::PhysicalSize,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
-    window::Window,
+    window::{Window, WindowAttributes},
 };
 
 pub mod axis;
@@ -50,6 +50,7 @@ pub struct App {
     event_loop: EventLoop<CustomEvent>,
     proxy: EventLoopProxy<CustomEvent>,
     images: ImageCache,
+    window_attributes: WindowAttributes,
 }
 
 impl App {
@@ -63,13 +64,20 @@ impl App {
             event_loop,
             proxy,
             images,
+            window_attributes: Window::default_attributes(),
         }
+    }
+
+    /// Whether the window starts maximized. Defaults to `false`.
+    pub fn maximized(mut self, maximized: bool) -> Self {
+        self.window_attributes = self.window_attributes.with_maximized(maximized);
+        self
     }
 
     /// Runs the event loop to display and run a widget.
     /// This method returns when the window is closed.
     pub fn run(self, widget: SharedWidget) {
-        let mut state = AppState::new(self.proxy, self.images, widget);
+        let mut state = AppState::new(self.proxy, self.images, self.window_attributes, widget);
         self.event_loop.run_app(&mut state).unwrap();
     }
 
@@ -118,6 +126,7 @@ impl Default for App {
 struct AppState {
     proxy: EventLoopProxy<CustomEvent>,
     images: ImageCache,
+    window_attributes: WindowAttributes,
     graphics: Option<Graphics>,
     input: Input,
     root: Root,
@@ -132,11 +141,13 @@ impl AppState {
     pub fn new(
         proxy: EventLoopProxy<CustomEvent>,
         images: ImageCache,
+        window_attributes: WindowAttributes,
         widget: SharedWidget,
     ) -> Self {
         Self {
             proxy,
             images,
+            window_attributes,
             graphics: None,
             input: Input::new(),
             root: Root::new(widget),
@@ -233,7 +244,7 @@ impl ApplicationHandler<CustomEvent> for AppState {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
-                .create_window(Window::default_attributes())
+                .create_window(self.window_attributes.clone())
                 .unwrap(),
         );
         self.graphics = Some(Graphics::new(

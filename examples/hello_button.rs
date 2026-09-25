@@ -69,5 +69,5 @@ impl Widget for MainWidget {
 }
 
 fn main() {
-    App::new().run(MainWidget::new().shared());
+    App::new().maximized(true).run(MainWidget::new().shared());
 }
