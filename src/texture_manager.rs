@@ -49,7 +49,7 @@ impl TextureManager {
     /// transferred to the GPU memory.
     ///
     /// Possible values for `format` are `TextureFormat::Rgba8Unorm` and `TextureFormat::R8Unorm`.
-    /// The later one is particularly usefull for loading microscopy images which are only in gray
+    /// The later one is particularly useful for loading microscopy images which are only in gray
     /// levels, making GPU video memory usage reduced (1 color channel instead of 3 or 4).
     ///
     /// Note: if the texture was already loaded previously, `format` is ignored; the texture is not

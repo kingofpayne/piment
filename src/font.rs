@@ -495,7 +495,7 @@ pub struct TextLayoutGlyph {
     pub uv: Rect,
 }
 
-/// Possible horizontal alignement for laying out text.
+/// Possible horizontal alignment for laying out text.
 #[derive(Copy, Clone)]
 pub enum TextHorizontalAlign {
     Left,

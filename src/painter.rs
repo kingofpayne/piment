@@ -40,11 +40,11 @@ pub struct Painter {
     pipelines: BTreeMap<PipelineConfig, RenderResources>,
     /// Current chunk being built.
     chunk: Chunk,
-    /// List of rendering chunks which have been commited.
+    /// List of rendering chunks which have been committed.
     /// Each chunk stores vertices to be rendered, associated textures and shaders, etc.
     chunks: Vec<Chunk>,
     /// All vertices of all chunks
-    /// Filled when the widgets are rendering, then copied in `vertex_buffer` for transfering them
+    /// Filled when the widgets are rendering, then copied in `vertex_buffer` for transferring them
     /// to the GPU.
     vertices: Vec<Vertex>,
     /// Vertex buffer used for all primitives to be rendered.
@@ -52,7 +52,7 @@ pub struct Painter {
     /// The buffer is reallocated when too small.
     vertex_buffer: DynamicBuffer,
     /// All vertex indices of all chunks.
-    /// Filled when the widgets are rendering, then copied in `index_buffer` for transfering them
+    /// Filled when the widgets are rendering, then copied in `index_buffer` for transferring them
     /// to the GPU.
     indices: Vec<u32>,
     /// Index buffer used for all primitives to be rendered.

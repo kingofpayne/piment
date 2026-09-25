@@ -28,7 +28,7 @@ impl Label {
 
     /// Sets the text to be displayed by the label.
     pub fn set_text(&mut self, text: &str) {
-        // Check for a difference to avoid triggering unecessary layout recalculation.
+        // Check for a difference to avoid triggering unnecessary layout recalculation.
         if text != self.text {
             self.text = text.into();
             self.core.layout_request = true;

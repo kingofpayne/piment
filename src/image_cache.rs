@@ -36,7 +36,7 @@ struct Key {
 
 /// Loads and cache images.
 ///
-/// This struct can be cloned and shared accross threads, so all tasks in the program can share
+/// This struct can be cloned and shared across threads, so all tasks in the program can share
 /// efficiently the images.
 ///
 /// Eventually, images can be put in a queue when requested and loaded by a worker thread monitoring

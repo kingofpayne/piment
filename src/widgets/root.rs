@@ -6,7 +6,7 @@ pub struct Root {
     pub widget: SharedWidget,
     focused: Uid,
     /// Current cursor icon. This member is used to remember the latest cursor asked to winit, to
-    /// remove unecessary calls to cursor change for each frame.
+    /// remove unnecessary calls to cursor change for each frame.
     cursor: CursorIcon,
 }
 

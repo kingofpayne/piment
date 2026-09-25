@@ -11,7 +11,7 @@ pub struct Theme {
     pub active_color: Color,
     /// Border color for buttons, line box.
     pub border_color: Color,
-    /// Idle button backgound color.
+    /// Idle button background color.
     pub button_idle_color: Color,
     /// Hovered button background color.
     pub button_hover_color: Color,
