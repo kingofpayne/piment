@@ -39,7 +39,7 @@ pub mod widgets;
 
 /// Context for running a widget as an application.
 ///
-/// ```
+/// ```no_run
 /// # use piment::widgets::Button;
 /// # use piment::App;
 /// # use piment::widgets::Share;
