@@ -81,6 +81,12 @@ impl App {
         self.event_loop.run_app(&mut state).unwrap();
     }
 
+    /// Returns a reference to the event loop proxy. Can be cloned and shared to threads that may
+    /// need to send events to the main event loop, for instance when a process has finished.
+    pub fn proxy(&self) -> &EventLoopProxy<CustomEvent> {
+        &self.proxy
+    }
+
     /// Returns a reference to the image cache.
     /// This cache is used when loading textures and shared by [Graphics]. It can be cloned for
     /// sharing with widgets or threads that may need to load and access images.
