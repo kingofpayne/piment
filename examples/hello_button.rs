@@ -5,17 +5,17 @@
 
 use glam::Vec2;
 use piment::{
+    App,
     graphics::Graphics,
     impl_widget_core,
     input::Input,
-    run_widget,
     widgets::{Button, Label, Layout, Panel, Share, Shared, Widget, WidgetCore},
 };
 
 /// Root widget of the application.
 ///
 /// It builds and embeds the widget tree, and counts how many times the button has been clicked.
-struct App {
+struct MainWidget {
     /// Widget common properties.
     core: WidgetCore,
     /// Panel holding the whole interface.
@@ -28,7 +28,7 @@ struct App {
     counter: u32,
 }
 
-impl App {
+impl MainWidget {
     fn new() -> Self {
         let label = Label::new("Hello").shared();
         let button = Button::new("Click me").shared();
@@ -51,7 +51,7 @@ impl App {
     }
 }
 
-impl Widget for App {
+impl Widget for MainWidget {
     impl_widget_core!();
 
     fn minimum_size(&mut self, graphics: &mut Graphics) -> Vec2 {
@@ -69,5 +69,5 @@ impl Widget for App {
 }
 
 fn main() {
-    run_widget(App::new().shared());
+    App::new().run(MainWidget::new().shared());
 }

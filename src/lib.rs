@@ -1,9 +1,10 @@
 use crate::{
     event::CustomEvent,
     graphics::Graphics,
+    image_cache::ImageCache,
     input::Input,
     rect::Rect,
-    widgets::{Root, SharedWidget},
+    widgets::{Panel, Root, Share, SharedWidget},
 };
 use glam::Mat4;
 use std::sync::Arc;
@@ -24,29 +25,114 @@ pub mod color;
 pub mod event;
 pub mod font;
 pub mod graphics;
+pub mod image_cache;
 pub mod input;
 pub mod painter;
 pub mod quad;
 pub mod rect;
+pub mod texture_manager;
 pub mod theme;
 pub mod uid;
 pub mod vertex;
 pub mod widgets;
 
-struct App {
-    graphics: Option<Graphics>,
-    input: Input,
-    root: Root,
+/// Context for running a widget as an application.
+///
+/// ```
+/// # use piment::widgets::Button;
+/// # use piment::App;
+/// # use piment::widgets::Share;
+/// let widget = Button::new("Hello world!").shared();
+/// let app = App::new().run(widget);
+/// ```
+pub struct App {
+    event_loop: EventLoop<CustomEvent>,
     proxy: EventLoopProxy<CustomEvent>,
+    images: ImageCache,
 }
 
 impl App {
-    fn new(widget: SharedWidget, proxy: EventLoopProxy<CustomEvent>) -> Self {
+    /// Creates the context for running an application.
+    pub fn new() -> Self {
+        let event_loop: EventLoop<CustomEvent> = EventLoop::with_user_event().build().unwrap();
+        event_loop.set_control_flow(ControlFlow::Wait);
+        let proxy = event_loop.create_proxy();
+        let images = ImageCache::new(8 * 1024 * 1024 * 1024); // 8 Gb cache
         Self {
+            event_loop,
+            proxy,
+            images,
+        }
+    }
+
+    /// Runs the event loop to display and run a widget.
+    /// This method returns when the window is closed.
+    pub fn run(self, widget: SharedWidget) {
+        let mut state = AppState::new(self.proxy, self.images, widget);
+        self.event_loop.run_app(&mut state).unwrap();
+    }
+
+    /// Returns a reference to the image cache.
+    /// This cache is used when loading textures and shared by [Graphics]. It can be cloned for
+    /// sharing with widgets or threads that may need to load and access images.
+    ///
+    /// The following example shows how to share the image cache created by App with a widget.
+    ///
+    /// ```no_run
+    /// # use piment::App;
+    /// # use piment::image_cache::ImageCache;
+    /// # use piment::impl_widget_core;
+    /// # use piment::widgets::{Share, Widget, WidgetCore};
+    /// # struct SomeWidget {
+    /// #     core: WidgetCore,
+    /// #     images: ImageCache,
+    /// # }
+    /// # impl SomeWidget {
+    /// #     fn new(images: ImageCache) -> Self {
+    /// #         Self {
+    /// #             core: WidgetCore::new("SomeWidget"),
+    /// #             images,
+    /// #         }
+    /// #     }
+    /// # }
+    /// # impl Widget for SomeWidget {
+    /// #     impl_widget_core!();
+    /// # }
+    /// let app = App::new();
+    /// let widget = SomeWidget::new(app.images().clone()).shared();
+    /// app.run(widget);
+    /// ```
+    pub fn images(&self) -> &ImageCache {
+        &self.images
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct AppState {
+    proxy: EventLoopProxy<CustomEvent>,
+    images: ImageCache,
+    graphics: Option<Graphics>,
+    input: Input,
+    root: Root,
+}
+
+impl AppState {
+    pub fn new(
+        proxy: EventLoopProxy<CustomEvent>,
+        images: ImageCache,
+        widget: SharedWidget,
+    ) -> Self {
+        Self {
+            proxy,
+            images,
             graphics: None,
             input: Input::new(),
             root: Root::new(widget),
-            proxy,
         }
     }
 
@@ -111,14 +197,18 @@ impl App {
     }
 }
 
-impl ApplicationHandler<CustomEvent> for App {
+impl ApplicationHandler<CustomEvent> for AppState {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
                 .create_window(Window::default_attributes())
                 .unwrap(),
         );
-        self.graphics = Some(Graphics::new(window.clone(), self.proxy.clone()));
+        self.graphics = Some(Graphics::new(
+            window.clone(),
+            self.proxy.clone(),
+            self.images.clone(),
+        ));
         window.request_redraw();
     }
 
@@ -154,11 +244,14 @@ impl ApplicationHandler<CustomEvent> for App {
             _ => {}
         }
     }
-}
 
-pub fn run_widget(widget: SharedWidget) {
-    let event_loop: EventLoop<CustomEvent> = EventLoop::with_user_event().build().unwrap();
-    event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(widget, event_loop.create_proxy());
-    event_loop.run_app(&mut app).unwrap();
+    /// Handles custom events sent by winit proxies, usually from threads to wake-up and notify the
+    /// main loop.
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: CustomEvent) {
+        let CustomEvent::Signal((signal, listener)) = event;
+        if let Some(graphics) = &mut self.graphics {
+            self.root.signal(graphics, signal, listener);
+        }
+        self.graphics.as_ref().unwrap().window.request_redraw();
+    }
 }

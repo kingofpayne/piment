@@ -9,7 +9,7 @@ use crate::{
     theme::THEME,
     widgets::{CheckBox, Layout, Share, Shared, Widget, WidgetCore},
 };
-use glam::{Vec2, Vec4, vec2};
+use glam::{vec2, Vec2, Vec4};
 
 /// Menu item.
 pub struct MenuItem {

@@ -3,7 +3,7 @@ use std::{collections::VecDeque, mem::take};
 use winit::window::CursorIcon;
 
 pub struct Root {
-    widget: SharedWidget,
+    pub widget: SharedWidget,
     focused: Uid,
     /// Current cursor icon. This member is used to remember the latest cursor asked to winit, to
     /// remove unecessary calls to cursor change for each frame.

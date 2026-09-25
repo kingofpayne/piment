@@ -631,11 +631,6 @@ pub enum BuiltinShader {
 }
 
 /// WGSL shader used by a pipeline.
-///
-/// Custom shaders must provide `vs_main` and `fs_main` entry points, accept the [`Vertex`]
-/// attributes at locations 0 to 6, and use the bind group layout of the painter: the matrix
-/// uniform at binding 0, the fragment settings `vec4f` at binding 1, and when a texture is set,
-/// the texture at binding 2 and its sampler at binding 3.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Shader {
     /// Shader shipped with the library.
@@ -672,7 +667,9 @@ impl Shader {
             }
             Self::Builtin(BuiltinShader::Font) => include_str!("../shaders/font.wgsl").into(),
             Self::File(path) => std::fs::read_to_string(path)
-                .unwrap_or_else(|e| panic!("Failed to load shader source {}: {e}", path.display()))
+                .unwrap_or_else(|e| {
+                    panic!("Failed to load shader source {}: {e}", path.display())
+                })
                 .into(),
             Self::Source(source) => source.clone(),
         }

@@ -14,3 +14,4 @@ swash = "0.2.10"
 wgpu = "27.0.1"
 winit = "0.30.12"
 pollster = "0.4"
+moka = { version = "0.12.15", features = ["sync"] }

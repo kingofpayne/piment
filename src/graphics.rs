@@ -1,11 +1,16 @@
-use crate::{event::CustomEvent, font::Font, painter::Painter, theme::THEME};
+use crate::{
+    event::CustomEvent, font::Font, image_cache::ImageCache, painter::Painter,
+    texture_manager::TextureManager, theme::THEME,
+};
 use glam::uvec2;
+use image::{GrayImage, ImageBuffer, Luma};
 use pollster::FutureExt;
 use std::sync::Arc;
 use wgpu::{
     Backends, CompositeAlphaMode, Device, DeviceDescriptor, DeviceType, Extent3d,
-    InstanceDescriptor, PresentMode, Queue, Surface, SurfaceConfiguration, Texture,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
+    InstanceDescriptor, Origin3d, PresentMode, Queue, Surface, SurfaceConfiguration,
+    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureUsages,
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
@@ -19,6 +24,7 @@ pub struct Graphics {
     pub surface_format: TextureFormat,
     pub texture_depth: Texture,
     pub painter: Painter,
+    pub textures: TextureManager,
     pub font: Font,
     /// Sends custom event to winit main event loop.
     /// Can be used by threads to wake-up and notify main loop.
@@ -26,7 +32,11 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    pub fn new(window: Arc<Window>, proxy: EventLoopProxy<CustomEvent>) -> Self {
+    pub fn new(
+        window: Arc<Window>,
+        proxy: EventLoopProxy<CustomEvent>,
+        images: ImageCache,
+    ) -> Self {
         let instance = wgpu::Instance::new(&InstanceDescriptor::default());
 
         let mut adapters: Vec<_> = instance.enumerate_adapters(Backends::PRIMARY);
@@ -75,14 +85,15 @@ impl Graphics {
 
         Self {
             window,
-            device,
-            queue,
+            device: device.clone(),
+            queue: queue.clone(),
             size,
             surface,
             surface_config,
             surface_format,
             texture_depth,
             painter,
+            textures: TextureManager::new(device, queue, images),
             font,
             proxy,
         }
@@ -95,6 +106,68 @@ impl Graphics {
         self.surface.configure(&self.device, &self.surface_config);
         self.texture_depth = create_depth_texture(&self.device, new_size);
         self.painter.size = uvec2(new_size.width, new_size.height);
+    }
+
+    /// Creates a basic 2D texture.
+    pub fn create_texture(&self, width: u32, height: u32, format: TextureFormat) -> Texture {
+        self.device.create_texture(&TextureDescriptor {
+            label: None,
+            size: Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        })
+    }
+
+    /// Updates a GPU texture by queuing a CPU to GPU buffer copy.
+    pub fn update_texture<P, C>(&self, texture: &Texture, image: &ImageBuffer<P, C>)
+    where
+        P: image::Pixel<Subpixel = u8>,
+        C: std::ops::Deref<Target = [u8]>,
+    {
+        let texture_size = Extent3d {
+            width: image.width(),
+            height: image.height(),
+            depth_or_array_layers: 1,
+        };
+        self.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            image,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width() * size_of::<P>() as u32),
+                rows_per_image: Some(image.height()),
+            },
+            texture_size,
+        );
+    }
+
+    /// Creates a checkerboard texture. `size` must be a multiple of 2.
+    pub fn create_checkerboard_texture(&self, size: u32, n: u32) -> Texture {
+        debug_assert!(size.is_multiple_of(2));
+        let texture = self.create_texture(size, size, TextureFormat::R8Unorm);
+        let w = size / (2 * n);
+        let image = GrayImage::from_fn(size, size, |x, y| {
+            if ((x / w) % 2) ^ ((y / w) % 2) == 0 {
+                Luma::<u8>([0])
+            } else {
+                Luma::<u8>([0xff])
+            }
+        });
+        self.update_texture(&texture, &image);
+        texture
     }
 }
 
