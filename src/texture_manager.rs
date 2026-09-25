@@ -6,13 +6,30 @@ use wgpu::{
     TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 
+/// Error returned when a texture cannot be created.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TextureError {
+    /// The requested texture format is not handled by [`create_texture_from_image`].
+    UnsupportedFormat(TextureFormat),
+}
+
+impl std::fmt::Display for TextureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedFormat(format) => write!(f, "unsupported texture format {format:?}"),
+        }
+    }
+}
+
+impl std::error::Error for TextureError {}
+
 pub struct TextureManager {
     /// GPU device.
     device: Device,
     /// GPU queue.
     queue: Queue,
     /// Cache of the texture loaded in the GPU.
-    textures: BTreeMap<String, Result<Texture, ()>>,
+    textures: BTreeMap<String, Result<Texture, TextureError>>,
     /// Cache of the images loaded in RAM memory (not GPU).
     images: ImageCache,
 }
@@ -37,7 +54,7 @@ impl TextureManager {
     ///
     /// Note: if the texture was already loaded previously, `format` is ignored; the texture is not
     /// loaded again in a different format.
-    pub fn get(&mut self, source: &str, format: TextureFormat) -> Result<Texture, ()> {
+    pub fn get(&mut self, source: &str, format: TextureFormat) -> Result<Texture, TextureError> {
         self.textures
             .entry(source.into())
             .or_insert_with(|| {
@@ -77,14 +94,14 @@ pub fn create_texture_from_image(
     queue: &Queue,
     image: &DynamicImage,
     format: TextureFormat,
-) -> Result<Texture, ()> {
+) -> Result<Texture, TextureError> {
     let dimensions = image.dimensions();
     // Depending on the selected texture format, we must convert the original image to a matching
     // pixel data buffer.
-    let buf: &[u8] = match format {
-        TextureFormat::Rgba8Unorm => &image.to_rgba8(),
-        TextureFormat::R8Unorm => &image.to_luma8(),
-        _ => panic!("Unsupported texture format"),
+    let (buf, pixel_size): (&[u8], u32) = match format {
+        TextureFormat::Rgba8Unorm => (&image.to_rgba8(), 4),
+        TextureFormat::R8Unorm => (&image.to_luma8(), 1),
+        _ => return Err(TextureError::UnsupportedFormat(format)),
     };
     let texture_size = Extent3d {
         width: dimensions.0,
@@ -101,11 +118,6 @@ pub fn create_texture_from_image(
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let pixel_size = match format {
-        TextureFormat::Rgba8Unorm => 4,
-        TextureFormat::R8Unorm => 1,
-        _ => panic!(),
-    };
     queue.write_texture(
         TexelCopyTextureInfo {
             texture: &texture,

@@ -77,12 +77,12 @@ impl Root {
         let mut todo: VecDeque<SharedWidget> =
             widgets.iter().map(|item| item.widget.clone()).collect();
         let mut layout_request = false;
-        let mut repaint_request = false;
+        let mut _repaint_request = false;
         while let Some(widget) = todo.pop_front() {
             let mut widget = widget.borrow_mut();
             let core = widget.core_mut();
             layout_request |= core.layout_request;
-            repaint_request |= core.repaint_request;
+            _repaint_request |= core.repaint_request;
             core.layout_request = false;
             core.repaint_request = false;
             // Handle focus requests

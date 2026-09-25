@@ -667,9 +667,7 @@ impl Shader {
             }
             Self::Builtin(BuiltinShader::Font) => include_str!("../shaders/font.wgsl").into(),
             Self::File(path) => std::fs::read_to_string(path)
-                .unwrap_or_else(|e| {
-                    panic!("Failed to load shader source {}: {e}", path.display())
-                })
+                .unwrap_or_else(|e| panic!("Failed to load shader source {}: {e}", path.display()))
                 .into(),
             Self::Source(source) => source.clone(),
         }
