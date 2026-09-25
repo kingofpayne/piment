@@ -62,7 +62,7 @@ impl<K: Ord, D> Atlas<K, D> {
     }
 
     /// Insert or updates a glyph. This does not re-pack and re-build the atlas image, so
-    /// [Self::rebuild] must be called onces all glyphs have been inserted.
+    /// [Self::rebuild] must be called once all glyphs have been inserted.
     pub fn insert(&mut self, key: K, image: RgbaImage, data: D) {
         self.glyphs.insert(
             key,

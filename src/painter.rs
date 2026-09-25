@@ -606,7 +606,7 @@ impl Default for ChunkConfig {
 /// Triangles to be rendered and configuration describing how to render it.
 #[derive(Default, Clone)]
 struct Chunk {
-    /// Vertice range in the global array.
+    /// Vertex range in the global array.
     vertex_range: Range<usize>,
     /// Indices range in the global array.
     indices_range: Range<usize>,

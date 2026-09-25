@@ -124,7 +124,7 @@ pub struct WidgetCore {
     pub visible: bool,
     /// When true, widget is above others.
     pub above: bool,
-    /// Wether the mouse pointer is hover the widget or not.
+    /// Whether the mouse pointer is hover the widget or not.
     pub hover: bool,
     /// Whenever the widget catches mouse interaction (true) or let widgets underneath catch hit
     /// (false).
