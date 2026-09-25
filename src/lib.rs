@@ -6,7 +6,7 @@ use crate::{
     rect::Rect,
     widgets::{Root, SharedWidget},
 };
-use glam::Mat4;
+use glam::camera::lh::proj::directx::orthographic;
 use std::sync::Arc;
 use wgpu::{
     LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
@@ -223,7 +223,7 @@ impl AppState {
             occlusion_query_set: None,
         });
 
-        graphics.painter.projection_matrix = Mat4::orthographic_lh(
+        graphics.painter.projection_matrix = orthographic(
             0.0,
             graphics.size.width as f32,
             graphics.size.height as f32,
