@@ -10,10 +10,11 @@ use glam::Mat4;
 use std::sync::Arc;
 use wgpu::{
     LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-    RenderPassDescriptor, StoreOp, TextureViewDescriptor,
+    RenderPassDescriptor, StoreOp, SurfaceError, TextureViewDescriptor,
 };
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalSize,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::Window,
@@ -113,12 +114,18 @@ impl Default for App {
     }
 }
 
+/// Structure needed to run the event loop and handle the events.
 struct AppState {
     proxy: EventLoopProxy<CustomEvent>,
     images: ImageCache,
     graphics: Option<Graphics>,
     input: Input,
     root: Root,
+    /// Latest window size received from winit and not yet applied.
+    /// Reconfiguring the surface is slow (up to tens of milliseconds), and dragging the window
+    /// border emits resize events faster than that. Applying each of them would starve redraws
+    /// until the mouse button is released, so only the latest size is applied, once per frame.
+    pending_size: Option<PhysicalSize<u32>>,
 }
 
 impl AppState {
@@ -133,11 +140,37 @@ impl AppState {
             graphics: None,
             input: Input::new(),
             root: Root::new(widget),
+            pending_size: None,
         }
     }
 
     fn render(&mut self) {
         let graphics = self.graphics.as_mut().unwrap();
+
+        if let Some(size) = self.pending_size.take() {
+            graphics.resize(size);
+            self.root.layout(
+                graphics,
+                Rect::new(0.0, 0.0, size.width as f32, size.height as f32),
+            );
+        }
+
+        // The window may have been resized again since the surface was configured, which happens
+        // often while the window border is dragged. In that case the frame is skipped and the
+        // surface reconfigured on the next one.
+        let surface_texture = match graphics.surface.get_current_texture() {
+            Ok(surface_texture) => surface_texture,
+            Err(SurfaceError::Outdated | SurfaceError::Lost) => {
+                self.pending_size = Some(graphics.window.inner_size());
+                graphics.window.request_redraw();
+                return;
+            }
+            Err(SurfaceError::Timeout) => {
+                graphics.window.request_redraw();
+                return;
+            }
+            Err(e) => panic!("Failed to acquire surface texture: {e}"),
+        };
 
         // Ask all widgets to render themselves.
         self.root.render(graphics);
@@ -145,7 +178,6 @@ impl AppState {
         // Transfer buffers to the GPU before any draw call.
         graphics.painter.prepare_render(&graphics.queue);
 
-        let surface_texture = graphics.surface.get_current_texture().unwrap();
         let texture_view = surface_texture
             .texture
             .clone()
@@ -235,11 +267,8 @@ impl ApplicationHandler<CustomEvent> for AppState {
                 self.graphics.as_ref().unwrap().window.request_redraw();
             }
             WindowEvent::Resized(size) => {
-                self.graphics.as_mut().unwrap().resize(size);
-                self.root.layout(
-                    self.graphics.as_mut().unwrap(),
-                    Rect::new(0.0, 0.0, size.width as f32, size.height as f32),
-                );
+                self.pending_size = Some(size);
+                self.graphics.as_ref().unwrap().window.request_redraw();
             }
             _ => {}
         }
