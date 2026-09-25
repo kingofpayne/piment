@@ -4,7 +4,7 @@ use crate::{
     image_cache::ImageCache,
     input::Input,
     rect::Rect,
-    widgets::{Panel, Root, Share, SharedWidget},
+    widgets::{Root, SharedWidget},
 };
 use glam::Mat4;
 use std::sync::Arc;
