@@ -31,7 +31,7 @@ pub struct Theme {
 
 pub const THEME: Theme = Theme {
     font_size: 11,
-    panel_color: Color::new_gray(0.094),
+    panel_color: Color::new_gray(0.188),
     active_color: Color::from_hex_rgb(0x4772b3),
     border_color: Color::new_gray(0.239),
     button_idle_color: Color::new_gray(0.329),

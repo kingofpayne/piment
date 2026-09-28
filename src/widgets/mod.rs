@@ -1,5 +1,6 @@
 mod button;
 mod checkbox;
+mod grid;
 mod label;
 mod layout;
 mod line_box;
@@ -12,6 +13,7 @@ mod widget;
 
 pub use button::Button;
 pub use checkbox::CheckBox;
+pub use grid::Grid;
 pub use label::Label;
 pub use layout::Layout;
 pub use line_box::LineBox;
