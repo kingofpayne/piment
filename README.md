@@ -3,6 +3,7 @@
 A GPU backed GUI library.
 
 [![CI](https://github.com/kingofpayne/piment/actions/workflows/ci.yaml/badge.svg)](https://github.com/kingofpayne/piment/actions/workflows/ci.yaml)
+[![Crates.io](https://img.shields.io/crates/v/piment.svg)](https://crates.io/crates/piment)
 [![Documentation](https://docs.rs/piment/badge.svg)](https://docs.rs/piment)
 
 ## Overview
