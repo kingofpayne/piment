@@ -230,6 +230,12 @@ impl WidgetCore {
     }
 }
 
+impl Default for WidgetCore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub type SharedWidget = Rc<RefCell<dyn Widget>>;
 
 pub type Shared<T> = Rc<RefCell<T>>;
