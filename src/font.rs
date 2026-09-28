@@ -3,7 +3,7 @@ use font_kit::{
     family_name::FamilyName, handle::Handle, properties::Properties, source::SystemSource,
 };
 use glam::{Vec4, vec4};
-use image::{RgbaImage, imageops};
+use image::{GrayImage, RgbaImage, imageops};
 use std::{cmp::Reverse, collections::BTreeMap};
 use swash::{
     FontRef,
@@ -30,6 +30,9 @@ const CHARACTERS: &str = concat!(
 /// Width of the outline stroke, in pixels. The stroke is centered on the character contour, so it
 /// bleeds half of that width outside of the plain character.
 const OUTLINE_WIDTH: f32 = 2.0;
+
+/// Shadow Gaussian blur standard deviation per unit of font size: `sigma = scale * SHADOW_SIGMA_PER_SIZE`.
+const SHADOW_SIGMA_PER_SIZE: f32 = 1.0 / 11.0;
 
 /// Atlas image width and height, in pixels.
 const ATLAS_SIZE: u32 = 1024;
@@ -205,9 +208,10 @@ impl Font {
     /// Builds the atlas from font `data`, rasterizing every character of [CHARACTERS] at each of
     /// the requested `sizes`.
     ///
-    /// Each character is rendered twice into its atlas tile: filled in the red channel, and
-    /// stroked in the green channel. Both renderings share the tile, so a character and its
-    /// outline are painted with a single quad, picking a channel with the fragment shader.
+    /// Each character is rendered three times into its atlas tile: filled in the red channel,
+    /// stroked in the green channel, and filled then gaussian blurred in the blue channel, to be
+    /// used as a shadow. All renderings share the tile, so a character, its outline and its
+    /// shadow are painted with a single quad, picking a channel with the fragment shader.
     pub fn from_bytes(data: Vec<u8>, sizes: &[i32]) -> Self {
         Self::from_data(&data, 0, sizes)
     }
@@ -227,6 +231,7 @@ impl Font {
         for &scale in sizes {
             let metrics = font.glyph_metrics(&[]).scale(scale as f32);
             let mut scaler = context.builder(font).size(scale as f32).hint(true).build();
+            let sigma = SHADOW_SIGMA_PER_SIZE * scale as f32;
             let mut ascent = 0;
             let mut descent = 0;
 
@@ -249,7 +254,7 @@ impl Font {
                     descent = descent.max(image.placement.height as i32 - image.placement.top);
                 }
 
-                let (image, x, y) = tile(plain.as_ref(), outline.as_ref());
+                let (image, x, y) = tile(plain.as_ref(), outline.as_ref(), sigma);
                 atlas.insert(
                     FontGlyphKey { scale, char },
                     image,
@@ -409,12 +414,14 @@ impl Font {
 }
 
 /// Merges the filled and stroked renderings of a character into a single RGBA tile, the fill going
-/// to the red channel and the stroke to the green one.
+/// to the red channel and the stroke to the green one. The blue channel gets the fill blurred with
+/// a gaussian of standard deviation `sigma`, in pixels, to be used as a shadow.
 ///
 /// Both renderings are placed relatively to the character origin and have different sizes, so the
-/// tile covers the union of their bounding boxes. Returns the tile picture, and the offset of its
-/// top left corner from the character origin on the text baseline, Y pointing down.
-fn tile(plain: Option<&Image>, outline: Option<&Image>) -> (RgbaImage, i32, i32) {
+/// tile covers the union of their bounding boxes, padded by three `sigma` on every side so the
+/// blurred shadow is not cut off. Returns the tile picture, and the offset of its top left corner
+/// from the character origin on the text baseline, Y pointing down.
+fn tile(plain: Option<&Image>, outline: Option<&Image>, sigma: f32) -> (RgbaImage, i32, i32) {
     // Characters such as the space have nothing to render at all.
     let masks: Vec<&Image> = [plain, outline]
         .into_iter()
@@ -427,18 +434,21 @@ fn tile(plain: Option<&Image>, outline: Option<&Image>) -> (RgbaImage, i32, i32)
 
     // `placement.top` is the distance from the origin up to the top of the mask, hence the sign
     // flip to get Y pointing down.
-    let x1 = masks.iter().map(|m| m.placement.left).min().unwrap();
-    let y1 = masks.iter().map(|m| -m.placement.top).min().unwrap();
+    let pad = (3.0 * sigma).ceil() as i32;
+    let x1 = masks.iter().map(|m| m.placement.left).min().unwrap() - pad;
+    let y1 = masks.iter().map(|m| -m.placement.top).min().unwrap() - pad;
     let x2 = masks
         .iter()
         .map(|m| m.placement.left + m.placement.width as i32)
         .max()
-        .unwrap();
+        .unwrap()
+        + pad;
     let y2 = masks
         .iter()
         .map(|m| -m.placement.top + m.placement.height as i32)
         .max()
-        .unwrap();
+        .unwrap()
+        + pad;
 
     let mut image =
         RgbaImage::from_pixel((x2 - x1) as u32, (y2 - y1) as u32, [0, 0, 0, 255].into());
@@ -455,6 +465,15 @@ fn tile(plain: Option<&Image>, outline: Option<&Image>) -> (RgbaImage, i32, i32)
                 image.get_pixel_mut((x as u32) + mx, (y as u32) + my).0[channel] = value;
             }
         }
+    }
+
+    // The shadow is the plain character, blurred.
+    let plain = GrayImage::from_fn(image.width(), image.height(), |x, y| {
+        [image.get_pixel(x, y).0[0]].into()
+    });
+    let shadow = imageops::blur(&plain, sigma);
+    for (pixel, value) in image.pixels_mut().zip(shadow.pixels()) {
+        pixel.0[2] = value.0[0];
     }
 
     (image, x1, y1)

@@ -97,7 +97,10 @@ impl Widget for Button {
         );
 
         // Text
-        let style = FontStyle::new().color(Color::WHITE);
+        let style = FontStyle::new()
+            .color(Color::WHITE)
+            .shadow_color(Color::new_rgba(0.0, 0.0, 0.0, 0.5))
+            .shadow_offset(vec2(0.0, 1.0));
         let layout =
             graphics
                 .font

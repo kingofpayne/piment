@@ -27,6 +27,9 @@ fn vs_main(@location(0) xyz: vec3<f32>, @location(1) uv: vec2<f32>, @location(2)
     return result;
 }
 
+// The font atlas holds the plain characters in the red channel, their outlines in the green one and
+// their blurred shadows in the blue one. color2 is a mask selecting one of these channels as the
+// alpha of the color1 drawing color.
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     let tex = textureSample(texture, the_sampler, vertex.uv);

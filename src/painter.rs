@@ -458,61 +458,53 @@ impl Painter {
                 .blend(Blend::Alpha)
                 .with_texture(font.texture().unwrap().clone()),
         );
-        // Draw outline first.
-        // We cannot draw both the outline and the characters at the same time, because outlines
-        // overlap.
-        if style.outline_color.alpha() > 0.0 {
-            // The mask selects which color channel in the font atlas texture we want to use as an
-            // alpha channel for rendering the glyphs. The outline is the green channel in the
-            // texture.
-            //
-            // The mask is passed as color1.
-            // The drawing color is passed as color2.
-            let mask = Color::new_rgb(0.0, 1.0, 0.0);
-            for g in layout.glyphs.iter() {
-                self.quad(
-                    Vertex::from_xy(g.xy.x1, g.xy.y1)
-                        .uv(g.uv.x1, g.uv.y1)
-                        .color1(style.outline_color)
-                        .color2(mask),
-                    Vertex::from_xy(g.xy.x1, g.xy.y2)
-                        .uv(g.uv.x1, g.uv.y2)
-                        .color1(style.outline_color)
-                        .color2(mask),
-                    Vertex::from_xy(g.xy.x2, g.xy.y2)
-                        .uv(g.uv.x2, g.uv.y2)
-                        .color1(style.outline_color)
-                        .color2(mask),
-                    Vertex::from_xy(g.xy.x2, g.xy.y1)
-                        .uv(g.uv.x2, g.uv.y1)
-                        .color1(style.outline_color)
-                        .color2(mask),
-                );
-            }
+        // Shadows, outlines and characters overlap between neighbouring glyphs, so each is drawn
+        // in its own pass, back to front.
+        // The mask selects which color channel in the font atlas texture is used as an alpha
+        // channel for rendering the glyphs: red for characters, green for outlines and blue for
+        // shadows.
+        if style.shadow_color.alpha() > 0.0 {
+            let mask = Color::new_rgb(0.0, 0.0, 1.0);
+            self.glyphs(layout, style.shadow_offset, style.shadow_color, mask);
         }
-        // Draw the characters.
+        if style.outline_color.alpha() > 0.0 {
+            let mask = Color::new_rgb(0.0, 1.0, 0.0);
+            self.glyphs(layout, Vec2::ZERO, style.outline_color, mask);
+        }
         if style.color.alpha() > 0.0 {
             let mask = Color::new_rgb(1.0, 0.0, 0.0);
-            for g in layout.glyphs.iter() {
-                self.quad(
-                    Vertex::from_xy(g.xy.x1, g.xy.y1)
-                        .uv(g.uv.x1, g.uv.y1)
-                        .color1(style.color)
-                        .color2(mask),
-                    Vertex::from_xy(g.xy.x1, g.xy.y2)
-                        .uv(g.uv.x1, g.uv.y2)
-                        .color1(style.color)
-                        .color2(mask),
-                    Vertex::from_xy(g.xy.x2, g.xy.y2)
-                        .uv(g.uv.x2, g.uv.y2)
-                        .color1(style.color)
-                        .color2(mask),
-                    Vertex::from_xy(g.xy.x2, g.xy.y1)
-                        .uv(g.uv.x2, g.uv.y1)
-                        .color1(style.color)
-                        .color2(mask),
-                );
-            }
+            self.glyphs(layout, Vec2::ZERO, style.color, mask);
+        }
+    }
+
+    /// Draws every glyph of `layout` moved by `offset`, in `color`, using the atlas channel
+    /// selected by `mask` as alpha.
+    ///
+    /// The drawing color is passed as color1, and the mask as color2.
+    fn glyphs(&mut self, layout: &TextLayout, offset: Vec2, color: Color, mask: Color) {
+        for g in layout.glyphs.iter() {
+            let x1 = g.xy.x1 + offset.x;
+            let y1 = g.xy.y1 + offset.y;
+            let x2 = g.xy.x2 + offset.x;
+            let y2 = g.xy.y2 + offset.y;
+            self.quad(
+                Vertex::from_xy(x1, y1)
+                    .uv(g.uv.x1, g.uv.y1)
+                    .color1(color)
+                    .color2(mask),
+                Vertex::from_xy(x1, y2)
+                    .uv(g.uv.x1, g.uv.y2)
+                    .color1(color)
+                    .color2(mask),
+                Vertex::from_xy(x2, y2)
+                    .uv(g.uv.x2, g.uv.y2)
+                    .color1(color)
+                    .color2(mask),
+                Vertex::from_xy(x2, y1)
+                    .uv(g.uv.x2, g.uv.y1)
+                    .color1(color)
+                    .color2(mask),
+            );
         }
     }
 }
@@ -887,6 +879,10 @@ pub struct FontStyle {
     pub color: Color,
     /// Outline drawing color. Default is transparent.
     pub outline_color: Color,
+    /// Shadow drawing color. Default is transparent.
+    pub shadow_color: Color,
+    /// Shadow offset from the text, in pixels.
+    pub shadow_offset: Vec2,
     /// Text size. Must be one of the sizes built in the font atlas.
     pub size: i32,
 }
@@ -896,6 +892,8 @@ impl FontStyle {
         Self {
             color: Color::WHITE,
             outline_color: Color::BLACK_TRANSPARENT,
+            shadow_color: Color::BLACK_TRANSPARENT,
+            shadow_offset: Vec2::ZERO,
             size: DEFAULT_FONT_SIZE,
         }
     }
@@ -907,6 +905,16 @@ impl FontStyle {
 
     pub fn outline_color(mut self, color: Color) -> Self {
         self.outline_color = color;
+        self
+    }
+
+    pub fn shadow_color(mut self, color: Color) -> Self {
+        self.shadow_color = color;
+        self
+    }
+
+    pub fn shadow_offset(mut self, offset: Vec2) -> Self {
+        self.shadow_offset = offset;
         self
     }
 
