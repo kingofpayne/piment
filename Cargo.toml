@@ -1,7 +1,11 @@
 [package]
 name = "piment"
+description = "A GPU backed GUI library"
+repository = "https://github.com/kingofpayne/piment"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
 
 [dependencies]
 bytemuck = "1.23.2"
