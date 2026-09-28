@@ -7,14 +7,15 @@ use crate::{
 use glam::{Vec2, vec2};
 
 /// A layout placing widgets in cells arranged in rows and columns.
-///
-/// Each column is as wide as the largest minimum width of its widgets, and each row is as high as
-/// the largest minimum height of its widgets.
 pub struct Grid {
     /// Widget common properties.
     core: WidgetCore,
     /// Cells indexed by row, then column. All rows have the same number of columns.
     cells: Vec<Vec<Option<Cell>>>,
+    /// Horizontal spacing between two consecutive columns.
+    column_spacing: f32,
+    /// Vertical spacing between two consecutive rows.
+    row_spacing: f32,
 }
 
 /// Properties of a grid cell.
@@ -29,6 +30,34 @@ impl Grid {
         Self {
             core: WidgetCore::new(),
             cells: Vec::new(),
+            column_spacing: 4.0,
+            row_spacing: 4.0,
+        }
+    }
+
+    /// Returns the horizontal spacing between two consecutive columns.
+    pub fn column_spacing(&self) -> f32 {
+        self.column_spacing
+    }
+
+    /// Sets the horizontal spacing between two consecutive columns.
+    pub fn set_column_spacing(&mut self, spacing: f32) {
+        if spacing != self.column_spacing {
+            self.column_spacing = spacing;
+            self.core.request_layout();
+        }
+    }
+
+    /// Returns the vertical spacing between two consecutive rows.
+    pub fn row_spacing(&self) -> f32 {
+        self.row_spacing
+    }
+
+    /// Sets the vertical spacing between two consecutive rows.
+    pub fn set_row_spacing(&mut self, spacing: f32) {
+        if spacing != self.row_spacing {
+            self.row_spacing = spacing;
+            self.core.request_layout();
         }
     }
 
@@ -109,14 +138,19 @@ impl Widget for Grid {
                         .borrow_mut()
                         .layout(graphics, Rect::new(x, y, x + width, y + height));
                 }
-                x += width;
+                x += width + self.column_spacing;
             }
-            y += height;
+            y += height + self.row_spacing;
         }
     }
 
     fn minimum_size(&mut self, graphics: &mut Graphics) -> Vec2 {
         let (widths, heights) = self.minimum_widths_heights(graphics);
-        vec2(widths.iter().sum(), heights.iter().sum())
+        let column_spacings = self.columns().saturating_sub(1) as f32 * self.column_spacing;
+        let row_spacings = self.rows().saturating_sub(1) as f32 * self.row_spacing;
+        vec2(
+            widths.iter().sum::<f32>() + column_spacings,
+            heights.iter().sum::<f32>() + row_spacings,
+        )
     }
 }
