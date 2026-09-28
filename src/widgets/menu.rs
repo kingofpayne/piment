@@ -241,6 +241,10 @@ impl Widget for Menu {
 
     fn update(&mut self, _graphics: &mut Graphics, _input: &Input) {
         self.clicked = self.items.iter().any(|item| item.borrow().clicked);
+        let open = self.core.visible;
+        for item in &self.items {
+            item.borrow_mut().set_open(open);
+        }
     }
 
     fn render(&mut self, graphics: &mut Graphics) {

@@ -7,10 +7,25 @@ use piment::{
     graphics::Graphics,
     impl_widget_core,
     widgets::{
-        Button, CheckBox, Grid, Label, LineBox, Panel, Share, Shared, SharedWidget, Widget,
-        WidgetCore,
+        Button, CheckBox, Grid, Label, LineBox, Panel, RootMenu, Share, Shared, SharedWidget,
+        Widget, WidgetCore,
     },
 };
+
+/// Builds a menu with a single button opening three sub-menus.
+fn build_menu() -> RootMenu {
+    let mut menu = RootMenu::new();
+    let entries = menu.add_submenu("Open me");
+    let mut entries = entries.borrow_mut();
+    for i in 1..=3 {
+        let sub_menu = entries.add_submenu(&format!("Menu {i}"));
+        let mut sub_menu = sub_menu.borrow_mut();
+        sub_menu.add("Item 1");
+        sub_menu.add("Item 2");
+    }
+    drop(entries);
+    menu
+}
 
 /// Root widget of the application.
 struct MainWidget {
@@ -22,11 +37,12 @@ struct MainWidget {
 
 impl MainWidget {
     fn new() -> Self {
-        let rows: [(&str, SharedWidget); 4] = [
+        let rows: [(&str, SharedWidget); 5] = [
             ("Label", Label::new("Some text").shared()),
             ("Button", Button::new("Click me").shared()),
             ("CheckBox", CheckBox::new().with_label("Check me").shared()),
             ("LineBox", LineBox::new().with_text("Edit me").shared()),
+            ("RootMenu", build_menu().shared()),
         ];
 
         let mut grid = Grid::new();
