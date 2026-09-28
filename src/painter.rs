@@ -225,11 +225,20 @@ impl Painter {
 
         pass.set_index_buffer(self.index_buffer.inner.slice(..), IndexFormat::Uint32);
         pass.set_vertex_buffer(0, self.vertex_buffer.inner.slice(..));
+        // wgpu requires the scissor origin plus size to lie inside the render target.
+        let scissor = chunk.config.scissor.intersection(IRect::new(
+            0,
+            0,
+            self.size.x as i32,
+            self.size.y as i32,
+        ));
+        let x = scissor.x1.min(self.size.x as i32);
+        let y = scissor.y1.min(self.size.y as i32);
         pass.set_scissor_rect(
-            chunk.config.scissor.x1.max(0) as u32,
-            chunk.config.scissor.y1.max(0) as u32,
-            (chunk.config.scissor.width() as u32).min(self.size.x),
-            (chunk.config.scissor.height() as u32).min(self.size.y),
+            x as u32,
+            y as u32,
+            (scissor.x2 - x).max(0) as u32,
+            (scissor.y2 - y).max(0) as u32,
         );
         pass.draw_indexed(
             chunk.indices_range.start as u32..chunk.indices_range.end as u32,
