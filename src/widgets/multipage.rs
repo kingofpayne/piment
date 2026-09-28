@@ -17,7 +17,7 @@ pub struct MultiPage {
 impl MultiPage {
     pub fn new(children: Vec<SharedWidget>) -> Self {
         Self {
-            core: WidgetCore::new("MultiPage").with_children(children),
+            core: WidgetCore::new().with_children(children),
             selected: 0,
         }
     }

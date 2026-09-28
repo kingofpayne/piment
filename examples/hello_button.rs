@@ -42,7 +42,7 @@ impl MainWidget {
         let panel = panel.shared();
 
         Self {
-            core: WidgetCore::new("App").with_children(vec![panel.clone()]),
+            core: WidgetCore::new().with_children(vec![panel.clone()]),
             panel,
             label,
             button,

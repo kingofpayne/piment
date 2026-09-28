@@ -34,7 +34,7 @@ pub struct MenuItem {
 impl MenuItem {
     pub fn new(axis: Axis, label: &str) -> Self {
         Self {
-            core: WidgetCore::new("MenuItem"),
+            core: WidgetCore::new(),
             axis,
             label: label.into(),
             sub_menu: None,
@@ -190,7 +190,7 @@ impl Menu {
     pub fn new(axis: Axis) -> Self {
         let layout = Layout::new(axis).with_margin(Vec4::splat(3.0)).shared();
         Self {
-            core: WidgetCore::new("Menu")
+            core: WidgetCore::new()
                 .with_children(vec![layout.clone()])
                 .with_above(),
             layout,
@@ -278,7 +278,7 @@ impl RootMenu {
     pub fn new() -> Self {
         let layout = Layout::horizontal().shared();
         Self {
-            core: WidgetCore::new("RootMenu").with_children(vec![layout.clone()]),
+            core: WidgetCore::new().with_children(vec![layout.clone()]),
             layout,
             items: Vec::new(),
             open: false,

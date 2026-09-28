@@ -26,7 +26,7 @@ impl CheckBox {
     /// Creates a new checkbox with an empty label.
     pub fn new() -> Self {
         Self {
-            core: WidgetCore::new("CheckBox"),
+            core: WidgetCore::new(),
             label: "".into(),
             checked: false,
             on_change: false,

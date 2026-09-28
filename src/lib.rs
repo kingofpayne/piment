@@ -105,7 +105,7 @@ impl App {
     /// # impl SomeWidget {
     /// #     fn new(images: ImageCache) -> Self {
     /// #         Self {
-    /// #             core: WidgetCore::new("SomeWidget"),
+    /// #             core: WidgetCore::new(),
     /// #             images,
     /// #         }
     /// #     }

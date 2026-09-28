@@ -27,7 +27,7 @@ impl Button {
 
     pub fn new(text: &str) -> Self {
         Self {
-            core: WidgetCore::new("Button"),
+            core: WidgetCore::new(),
             text: text.into(),
             pressed: false,
             on_click: false,

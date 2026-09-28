@@ -113,9 +113,6 @@ pub struct WidgetCore {
     /// Unique identifier for widget identification.
     /// Used for instance for focus attribution.
     pub uid: Uid,
-    /// Widget name.
-    /// For debug.
-    pub name: String,
     /// Position of the widget.
     pub rect: Rect,
     /// Children.
@@ -146,10 +143,9 @@ pub struct WidgetCore {
 
 impl WidgetCore {
     /// Returns a new `WidgetCore` with no children.
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
         Self {
             uid: Uid::new(),
-            name: name.into(),
             rect: Default::default(),
             children: Default::default(),
             visible: true,

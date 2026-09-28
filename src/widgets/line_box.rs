@@ -48,7 +48,7 @@ impl LineBox {
     /// Creates a new empty line box.
     pub fn new() -> Self {
         Self {
-            core: WidgetCore::new("LineBox").with_cursor(CursorIcon::Text),
+            core: WidgetCore::new().with_cursor(CursorIcon::Text),
             text: String::new(),
             cursor_start: 0,
             cursor_end: 0,

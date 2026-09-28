@@ -40,7 +40,7 @@ impl ScrollBar {
     /// For simpler code, [Self::horizontal] or [Self::vertical] can be used instead.
     pub fn new(axis: Axis) -> Self {
         Self {
-            core: WidgetCore::new("ScrollBar"),
+            core: WidgetCore::new(),
             axis,
             min: 0.0,
             max: 1.0,

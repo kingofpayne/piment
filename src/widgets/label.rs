@@ -20,7 +20,7 @@ pub struct Label {
 impl Label {
     pub fn new(text: &str) -> Self {
         Self {
-            core: WidgetCore::new("Label"),
+            core: WidgetCore::new(),
             text: text.into(),
             style: FontStyle::new(),
         }

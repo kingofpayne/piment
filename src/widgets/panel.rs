@@ -22,7 +22,7 @@ pub struct Panel {
 impl Panel {
     pub fn new() -> Self {
         Self {
-            core: WidgetCore::new("Panel"),
+            core: WidgetCore::new(),
             child: None,
             padding: 4.0,
             corner_radius: Vec4::splat(0.0),

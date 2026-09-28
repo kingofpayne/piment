@@ -39,7 +39,7 @@ impl Layout {
     /// For simpler code, [Self::horizontal] or [Self::vertical] can be used instead.
     pub fn new(axis: Axis) -> Self {
         Self {
-            core: WidgetCore::new("Layout"),
+            core: WidgetCore::new(),
             axis,
             children: Vec::new(),
             margin: Vec4::ZERO,
