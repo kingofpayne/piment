@@ -64,8 +64,7 @@ impl Widget for Button {
     fn render(&mut self, graphics: &mut Graphics) {
         let rect = self.core.rect;
         // The bottom pixel row of the widget is left to the shadow, so the button body is one
-        // pixel shorter. Everything else is placed relatively to the body, otherwise it is off by
-        // half a pixel.
+        // pixel shorter.
         let body = rect + Rect::new(0.0, 0.0, 0.0, -1.0);
 
         // Shadow
@@ -97,6 +96,8 @@ impl Widget for Button {
         );
 
         // Text
+        // Note that the text is vertically centered with inclusion of the shadow, so if a label is
+        // aside a button, the text baseline will be the same.
         let style = FontStyle::new()
             .color(Color::WHITE)
             .shadow_color(Color::new_rgba(0.0, 0.0, 0.0, 0.5))
@@ -104,7 +105,7 @@ impl Widget for Button {
         let layout =
             graphics
                 .font
-                .layout(&self.text, body, TextHorizontalAlign::Center, style.size);
+                .layout(&self.text, rect, TextHorizontalAlign::Center, style.size);
         graphics.painter.text_layout(&graphics.font, &layout, style);
     }
 }
