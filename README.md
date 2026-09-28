@@ -10,7 +10,7 @@ A GPU backed GUI library.
 
 piment is a retained-mode GUI library for Rust, inspired by Blender, egui and Qt. The interface is
 a tree of widgets rendered with [wgpu](https://wgpu.rs) in a [winit](https://github.com/rust-windowing/winit)
-window. 
+window.
 
 piment is in early development: the API may change between versions.
 
