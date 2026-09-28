@@ -225,7 +225,7 @@ impl Rect {
         self.into()
     }
 
-    /// Returns the same rectangle but with `x1 <= x2` and `y1 < y2`.
+    /// Returns the same rectangle but with `x1 <= x2` and `y1 <= y2`.
     pub fn sorted(&self) -> Self {
         Self {
             x1: self.x1.min(self.x2),
@@ -233,6 +233,11 @@ impl Rect {
             y1: self.y1.min(self.y2),
             y2: self.y1.max(self.y2),
         }
+    }
+
+    /// Returns true if `x1 <= x2` and `y1 <= y2`.
+    pub fn is_sorted(&self) -> bool {
+        self.x1 <= self.x2 && self.y1 <= self.y2
     }
 }
 
@@ -488,7 +493,7 @@ impl DRect {
         self.into()
     }
 
-    /// Returns the same rectangle but with `x1 <= x2` and `y1 < y2`.
+    /// Returns the same rectangle but with `x1 <= x2` and `y1 <= y2`.
     pub fn sorted(&self) -> Self {
         Self {
             x1: self.x1.min(self.x2),
@@ -496,6 +501,11 @@ impl DRect {
             y1: self.y1.min(self.y2),
             y2: self.y1.max(self.y2),
         }
+    }
+
+    /// Returns true if `x1 <= x2` and `y1 <= y2`.
+    pub fn is_sorted(&self) -> bool {
+        self.x1 <= self.x2 && self.y1 <= self.y2
     }
 }
 
@@ -560,6 +570,11 @@ impl IRect {
     /// Returns the height of the rectangle `y2 - y1`.
     pub const fn height(&self) -> i32 {
         self.y2 - self.y1
+    }
+
+    /// Returns true if `x1 <= x2` and `y1 <= y2`.
+    pub const fn is_sorted(&self) -> bool {
+        self.x1 <= self.x2 && self.y1 <= self.y2
     }
 
     /// Returns the maximum rectangle contained by `self` and `other` rectangles.
