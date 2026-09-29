@@ -3,6 +3,7 @@ use crate::buffer::DynamicBuffer;
 use crate::color::Color;
 use crate::font::Font;
 use crate::font::TextLayout;
+use crate::font_sdf::{FontSdf, OUTLINE_WIDTH, SHADOW_SIGMA_PER_SIZE, SPREAD};
 use crate::rect::IRect;
 use crate::rect::Rect;
 use crate::vertex::Vertex;
@@ -518,6 +519,90 @@ impl Painter {
             );
         }
     }
+
+    /// Paints `text` in `rect` with a distance field font, which can be drawn at any
+    /// [FontStyle::size].
+    pub fn text_sdf(&mut self, font: &FontSdf, text: &str, rect: Rect, style: FontStyle) {
+        if text.is_empty() {
+            return;
+        }
+        let layout = font.layout(text, rect, TextHorizontalAlign::Left, style.size as f32);
+        self.text_layout_sdf(font, &layout, style);
+    }
+
+    /// Paints a [TextLayout] built by [FontSdf::layout].
+    pub fn text_layout_sdf(&mut self, font: &FontSdf, layout: &TextLayout, style: FontStyle) {
+        if layout.glyphs.is_empty() {
+            return;
+        }
+        self.begin(
+            ChunkConfig::default()
+                .shader(BuiltinShader::FontSdf)
+                .blend(Blend::Alpha)
+                .with_texture(font.texture().unwrap().clone()),
+        );
+        // Shadows, outlines and characters overlap between neighbouring glyphs, so each is drawn
+        // in its own pass, back to front. Passes only differ by their contour settings, which are
+        // per vertex, so they all share the same draw call.
+        if style.shadow_color.alpha() > 0.0 {
+            // The shadow edge must fade out before the distances clamped at the atlas spread.
+            let sigma = SHADOW_SIGMA_PER_SIZE * style.size as f32;
+            let softness = 0.5 + 1.5 * sigma;
+            self.glyphs_sdf(
+                layout,
+                style.shadow_offset,
+                style.shadow_color,
+                0.0,
+                softness,
+            );
+        }
+        if style.outline_color.alpha() > 0.0 {
+            let dilation = OUTLINE_WIDTH / 2.0;
+            self.glyphs_sdf(layout, Vec2::ZERO, style.outline_color, dilation, 0.5);
+        }
+        if style.color.alpha() > 0.0 {
+            self.glyphs_sdf(layout, Vec2::ZERO, style.color, 0.0, 0.5);
+        }
+    }
+
+    /// Draws every glyph of `layout` moved by `offset`, in `color`, from a distance field atlas.
+    ///
+    /// The glyphs contour is moved outwards by `dilation` pixels, and `softness` is the half width
+    /// of the edge transition, in pixels.
+    fn glyphs_sdf(
+        &mut self,
+        layout: &TextLayout,
+        offset: Vec2,
+        color: Color,
+        dilation: f32,
+        softness: f32,
+    ) {
+        let geom1 = vec4(2.0 * SPREAD as f32, dilation, softness, 0.0);
+        for g in layout.glyphs.iter() {
+            let x1 = g.xy.x1 + offset.x;
+            let y1 = g.xy.y1 + offset.y;
+            let x2 = g.xy.x2 + offset.x;
+            let y2 = g.xy.y2 + offset.y;
+            self.quad(
+                Vertex::from_xy(x1, y1)
+                    .uv(g.uv.x1, g.uv.y1)
+                    .color1(color)
+                    .geom1_vec(geom1),
+                Vertex::from_xy(x1, y2)
+                    .uv(g.uv.x1, g.uv.y2)
+                    .color1(color)
+                    .geom1_vec(geom1),
+                Vertex::from_xy(x2, y2)
+                    .uv(g.uv.x2, g.uv.y2)
+                    .color1(color)
+                    .geom1_vec(geom1),
+                Vertex::from_xy(x2, y1)
+                    .uv(g.uv.x2, g.uv.y1)
+                    .color1(color)
+                    .geom1_vec(geom1),
+            );
+        }
+    }
 }
 
 /// Every setting for rendering triangles in a particular way.
@@ -631,6 +716,7 @@ pub enum BuiltinShader {
     Line,
     LineTex,
     Font,
+    FontSdf,
 }
 
 /// WGSL shader used by a pipeline.
@@ -669,6 +755,9 @@ impl Shader {
                 include_str!("../shaders/line-tex.wgsl").into()
             }
             Self::Builtin(BuiltinShader::Font) => include_str!("../shaders/font.wgsl").into(),
+            Self::Builtin(BuiltinShader::FontSdf) => {
+                include_str!("../shaders/font-sdf.wgsl").into()
+            }
             Self::File(path) => std::fs::read_to_string(path)
                 .unwrap_or_else(|e| panic!("Failed to load shader source {}: {e}", path.display()))
                 .into(),
@@ -894,7 +983,8 @@ pub struct FontStyle {
     pub shadow_color: Color,
     /// Shadow offset from the text, in pixels.
     pub shadow_offset: Vec2,
-    /// Text size. Must be one of the sizes built in the font atlas.
+    /// Text size. Must be one of the sizes built in the font atlas, except for [FontSdf] which
+    /// accepts any size.
     pub size: i32,
 }
 

@@ -25,6 +25,7 @@ pub mod buffer;
 pub mod color;
 pub mod event;
 pub mod font;
+pub mod font_sdf;
 pub mod graphics;
 pub mod image_cache;
 pub mod input;

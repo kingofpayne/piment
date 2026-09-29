@@ -3,7 +3,7 @@ use font_kit::{
     family_name::FamilyName, handle::Handle, properties::Properties, source::SystemSource,
 };
 use glam::{Vec4, vec4};
-use image::{GrayImage, RgbaImage, imageops};
+use image::{GrayImage, ImageBuffer, Pixel, Rgba, RgbaImage, imageops};
 use std::{cmp::Reverse, collections::BTreeMap};
 use swash::{
     FontRef,
@@ -20,7 +20,7 @@ use wgpu::{
 const MARGIN: u32 = 1;
 
 /// Characters rasterized in the atlas.
-const CHARACTERS: &str = concat!(
+pub(crate) const CHARACTERS: &str = concat!(
     "abcdefghijklmnopqrstuvwxyz",
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
     "0123456789",
@@ -41,32 +41,38 @@ const ATLAS_SIZE: u32 = 1024;
 ///
 /// `K` is the glyphs keys types.
 /// `D` is glyphs additional associated data type.
-pub struct Atlas<K: Ord, D> {
-    glyphs: BTreeMap<K, Glyph<D>>,
-    image: RgbaImage,
+/// `P` is the atlas image pixel type.
+pub struct Atlas<K: Ord, D, P: Pixel<Subpixel = u8> = Rgba<u8>> {
+    glyphs: BTreeMap<K, Glyph<D, P>>,
+    image: ImageBuffer<P, Vec<u8>>,
 }
 
-impl<K: Ord, D> Atlas<K, D> {
+impl<K: Ord, D, P: Pixel<Subpixel = u8>> Atlas<K, D, P> {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             glyphs: BTreeMap::new(),
-            image: RgbaImage::new(width, height),
+            image: ImageBuffer::new(width, height),
         }
     }
 
     /// Returns the packed glyph for `key`, or `None` if it is not in the atlas.
-    fn glyph(&self, key: &K) -> Option<&Glyph<D>> {
+    pub(crate) fn glyph(&self, key: &K) -> Option<&Glyph<D, P>> {
         self.glyphs.get(key)
     }
 
+    /// Returns every glyph of the atlas.
+    pub(crate) fn glyphs_mut(&mut self) -> impl Iterator<Item = &mut Glyph<D, P>> {
+        self.glyphs.values_mut()
+    }
+
     /// Returns the atlas image.
-    fn image(&self) -> &RgbaImage {
+    pub(crate) fn image(&self) -> &ImageBuffer<P, Vec<u8>> {
         &self.image
     }
 
     /// Insert or updates a glyph. This does not re-pack and re-build the atlas image, so
     /// [Self::rebuild] must be called once all glyphs have been inserted.
-    pub fn insert(&mut self, key: K, image: RgbaImage, data: D) {
+    pub fn insert(&mut self, key: K, image: ImageBuffer<P, Vec<u8>>, data: D) {
         self.glyphs.insert(
             key,
             Glyph {
@@ -91,7 +97,7 @@ impl<K: Ord, D> Atlas<K, D> {
         self.image.fill(0);
 
         // Tallest glyphs first, so a shelf is only as high as the first glyph put on it.
-        let mut glyphs: Vec<&mut Glyph<D>> = self.glyphs.values_mut().collect();
+        let mut glyphs: Vec<&mut Glyph<D, P>> = self.glyphs.values_mut().collect();
         glyphs.sort_by_key(|glyph| Reverse(glyph.image.height()));
 
         // Insertion point, plus the height of the shelf being filled.
@@ -136,22 +142,22 @@ impl<K: Ord, D> Atlas<K, D> {
 }
 
 /// Holds each atlas glyph data.
-struct Glyph<D> {
+pub(crate) struct Glyph<D, P: Pixel<Subpixel = u8>> {
     /// Extra glyph data unrelated to glyph packing in the atlas.
     /// For font characters, this will store the character metrics.
-    data: D,
+    pub(crate) data: D,
     /// X offset in the atlas image.
-    x: i32,
+    pub(crate) x: i32,
     /// Y offset in the atlas image.
-    y: i32,
+    pub(crate) y: i32,
     /// Width in the atlas image.
-    w: i32,
+    pub(crate) w: i32,
     /// Height in the atlas image.
-    h: i32,
+    pub(crate) h: i32,
     /// Picture.
     /// Kepts aside the whole image so we can dynamically rebuild the atlas when new glyphs are
     /// added.
-    image: RgbaImage,
+    image: ImageBuffer<P, Vec<u8>>,
 }
 
 pub struct Font {
@@ -180,28 +186,7 @@ impl Font {
     /// Prefers DejaVu Sans when it is installed, then other common UI faces, then the platform
     /// generic sans-serif.
     pub fn from_system(sizes: &[i32]) -> Self {
-        let handle = SystemSource::new()
-            .select_best_match(
-                &[
-                    FamilyName::Title("DejaVu Sans".into()),
-                    FamilyName::Title("Liberation Sans".into()),
-                    FamilyName::Title("Noto Sans".into()),
-                    FamilyName::Title("Arial".into()),
-                    FamilyName::Title("Helvetica".into()),
-                    FamilyName::SansSerif,
-                ],
-                &Properties::new(),
-            )
-            .expect("Failed to find a system sans-serif font");
-        let (data, index) = match handle {
-            Handle::Path { path, font_index } => (
-                std::fs::read(&path).expect("Failed to load system font file"),
-                font_index,
-            ),
-            Handle::Memory { bytes, font_index } => {
-                (std::sync::Arc::unwrap_or_clone(bytes), font_index)
-            }
-        };
+        let (data, index) = system_font_data();
         Self::from_data(&data, index, sizes)
     }
 
@@ -410,6 +395,36 @@ impl Font {
             x += glyph.data.advance as f32;
         }
         TextLayout { glyphs, bounds }
+    }
+}
+
+/// Resolves a system sans-serif font, and returns the font file data and the font index in that
+/// file.
+///
+/// Prefers DejaVu Sans when it is installed, then other common UI faces, then the platform generic
+/// sans-serif.
+pub(crate) fn system_font_data() -> (Vec<u8>, u32) {
+    let handle = SystemSource::new()
+        .select_best_match(
+            &[
+                FamilyName::Title("DejaVu Sans".into()),
+                FamilyName::Title("Liberation Sans".into()),
+                FamilyName::Title("Noto Sans".into()),
+                FamilyName::Title("Arial".into()),
+                FamilyName::Title("Helvetica".into()),
+                FamilyName::SansSerif,
+            ],
+            &Properties::new(),
+        )
+        .expect("Failed to find a system sans-serif font");
+    match handle {
+        Handle::Path { path, font_index } => (
+            std::fs::read(&path).expect("Failed to load system font file"),
+            font_index,
+        ),
+        Handle::Memory { bytes, font_index } => {
+            (std::sync::Arc::unwrap_or_clone(bytes), font_index)
+        }
     }
 }
 

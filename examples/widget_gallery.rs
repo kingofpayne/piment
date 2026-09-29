@@ -23,7 +23,6 @@ fn build_menu() -> RootMenu {
         sub_menu.add("Item 1");
         sub_menu.add("Item 2");
     }
-    drop(entries);
     menu
 }
 
