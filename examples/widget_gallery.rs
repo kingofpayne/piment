@@ -37,6 +37,7 @@ struct MainWidget {
 impl MainWidget {
     fn new() -> Self {
         let rows: [(&str, SharedWidget); 6] = [
+            ("RootMenu", build_menu().shared()),
             ("Label", Label::new("Some text").shared()),
             ("Button", Button::new("Click me").shared()),
             ("CheckBox", CheckBox::new().with_label("Check me").shared()),
@@ -49,7 +50,6 @@ impl MainWidget {
                     .with_value(42.0)
                     .shared(),
             ),
-            ("RootMenu", build_menu().shared()),
         ];
 
         let mut grid = Grid::new();
