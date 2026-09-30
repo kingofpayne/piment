@@ -249,16 +249,30 @@ impl AppState {
 
 impl ApplicationHandler<CustomEvent> for AppState {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        // The window is shown only once sized, as the minimum size is known only after the
+        // graphics are created.
         let window = Arc::new(
             event_loop
-                .create_window(self.window_attributes.clone())
+                .create_window(self.window_attributes.clone().with_visible(false))
                 .unwrap(),
         );
-        self.graphics = Some(Graphics::new(
-            window.clone(),
-            self.proxy.clone(),
-            self.images.clone(),
-        ));
+        let mut graphics = Graphics::new(window.clone(), self.proxy.clone(), self.images.clone());
+
+        // A null dimension would make the surface configuration invalid.
+        let minimum_size = self.root.widget.borrow_mut().minimum_size(&mut graphics);
+        let minimum_size = PhysicalSize::new(
+            minimum_size.x.ceil().max(1.0) as u32,
+            minimum_size.y.ceil().max(1.0) as u32,
+        );
+        window.set_min_inner_size(Some(minimum_size));
+        if !self.window_attributes.maximized
+            && let Some(size) = window.request_inner_size(minimum_size)
+        {
+            self.pending_size = Some(size);
+        }
+        window.set_visible(self.window_attributes.visible);
+
+        self.graphics = Some(graphics);
         window.request_redraw();
     }
 
