@@ -30,23 +30,18 @@ impl Root {
     /// true. For instance, when clicking on a menu, the menu will have the `hit` flag while the
     /// widget below won't.
     pub fn update(&mut self, graphics: &mut Graphics, input: &Input) {
-        let mut hit_registered = false;
+        let mut hit_widget: Option<SharedWidget> = None;
         let widgets = self.list_widgets();
         // Update from children up to parents
         for item in widgets.iter().rev() {
             // For mouse events, we set hit flag for top-most widget (the widget which is directly
             // under the cursor).
             let mut filtered_input = input.clone();
-            if !hit_registered {
+            if hit_widget.is_none() {
                 let w = item.widget.borrow();
                 if item.visible && w.core().rect.contains(input.mouse_pos) && w.core().catch_hit {
                     filtered_input.hit = true;
-                    hit_registered = true;
-                    let new_cursor = w.core().cursor;
-                    if new_cursor != self.cursor {
-                        self.cursor = new_cursor;
-                        graphics.window.set_cursor(new_cursor);
-                    }
+                    hit_widget = Some(item.widget.clone());
                 }
             }
             let mut widget = item.widget.borrow_mut();
@@ -55,6 +50,15 @@ impl Root {
                 filtered_input.focus = true;
             }
             widget.update(graphics, &filtered_input);
+        }
+        // The cursor is read after the update, as widgets may change it depending on the pointer
+        // position.
+        if let Some(widget) = hit_widget {
+            let new_cursor = widget.borrow().core().cursor;
+            if new_cursor != self.cursor {
+                self.cursor = new_cursor;
+                graphics.window.set_cursor(new_cursor);
+            }
         }
         // When widgets update, their may raise flags and signals in their WidgetCore member. We
         // must parse the widgets and satisfy their requests.
@@ -78,6 +82,7 @@ impl Root {
             widgets.iter().map(|item| item.widget.clone()).collect();
         let mut layout_request = false;
         let mut _repaint_request = false;
+        let previous_focused = self.focused;
         while let Some(widget) = todo.pop_front() {
             let mut widget = widget.borrow_mut();
             let core = widget.core_mut();
@@ -102,6 +107,15 @@ impl Root {
                     item.widget.borrow_mut().signal(graphics, signal);
                     todo.push_back(item.widget.clone());
                 }
+            }
+        }
+        // Update the focus flags once no widget is borrowed anymore, as the widget requesting the
+        // focus may be the previous or the new focus holder.
+        if self.focused != previous_focused {
+            for item in widgets {
+                let mut widget = item.widget.borrow_mut();
+                let core = widget.core_mut();
+                core.focused = core.uid == self.focused;
             }
         }
         // Handle layout requests

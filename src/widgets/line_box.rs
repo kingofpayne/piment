@@ -28,9 +28,6 @@ pub struct LineBox {
     scroll: f32,
     /// True while the user is selecting text by dragging the mouse.
     selecting: bool,
-    /// Whether the widget has the focus. Cached from the input state so [Self::render] knows if
-    /// the cursor shall be painted.
-    focused: bool,
     /// Set to true on the frames the text has been edited by the user.
     pub on_change: bool,
     /// Set to true on the frame the user presses the enter key.
@@ -54,7 +51,6 @@ impl LineBox {
             cursor_end: 0,
             scroll: 0.0,
             selecting: false,
-            focused: false,
             on_change: false,
             on_submit: false,
         }
@@ -278,15 +274,11 @@ impl Widget for LineBox {
 
     fn update(&mut self, graphics: &mut Graphics, input: &Input) {
         self.core.update(input);
-        self.focused = input.focus;
         self.on_change = false;
         self.on_submit = false;
 
         if input.mouse_left_press && input.hit && self.core.hover {
             self.core.request_focus();
-            // The focus request is granted after all the widgets have been updated, so take it
-            // into account right now to paint the cursor without waiting for the next event.
-            self.focused = true;
             let index = self.index_at_x(&graphics.font, input.mouse_pos.x);
             self.move_cursor(index, input.shift_key_down());
             self.selecting = true;
@@ -302,7 +294,7 @@ impl Widget for LineBox {
             }
         }
 
-        if self.focused {
+        if self.core.focused() {
             self.update_from_keyboard(input);
         }
     }
@@ -377,7 +369,7 @@ impl Widget for LineBox {
         graphics.painter.text_layout(&graphics.font, &layout, style);
 
         // Cursor
-        if self.focused {
+        if self.core.focused() {
             let x = origin + self.char_offset(&graphics.font, self.cursor_end);
             graphics.painter.rectangle(
                 Rect::new(x, y1, x + Self::CURSOR_WIDTH, y2),

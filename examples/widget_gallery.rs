@@ -7,8 +7,8 @@ use piment::{
     graphics::Graphics,
     impl_widget_core,
     widgets::{
-        Button, CheckBox, Grid, Label, LineBox, Panel, RootMenu, Share, Shared, SharedWidget,
-        Widget, WidgetCore,
+        Button, CheckBox, Grid, Label, LineBox, Numeric, Panel, RootMenu, Share, Shared,
+        SharedWidget, Widget, WidgetCore,
     },
 };
 
@@ -36,11 +36,19 @@ struct MainWidget {
 
 impl MainWidget {
     fn new() -> Self {
-        let rows: [(&str, SharedWidget); 5] = [
+        let rows: [(&str, SharedWidget); 6] = [
             ("Label", Label::new("Some text").shared()),
             ("Button", Button::new("Click me").shared()),
             ("CheckBox", CheckBox::new().with_label("Check me").shared()),
             ("LineBox", LineBox::new().with_text("Edit me").shared()),
+            (
+                "Numeric",
+                Numeric::new()
+                    .with_min(0.0)
+                    .with_max(100.0)
+                    .with_value(42.0)
+                    .shared(),
+            ),
             ("RootMenu", build_menu().shared()),
         ];
 
