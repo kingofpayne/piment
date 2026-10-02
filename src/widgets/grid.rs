@@ -72,6 +72,7 @@ impl Grid {
     }
 
     /// Places a widget in the cell at the given `row` and `column`, growing the grid if needed.
+    /// If the cell already holds a widget, it is replaced.
     ///
     /// Returns the widget previously placed in that cell, if any.
     pub fn insert(
@@ -90,6 +91,72 @@ impl Grid {
         let previous = self.cells[row][column]
             .replace(Cell { widget })
             .map(|cell| cell.widget);
+        self.refresh_children();
+        previous
+    }
+
+    /// Removes the widget placed in the cell at the given `row` and `column`, leaving the cell
+    /// empty. The grid size is unchanged.
+    ///
+    /// Returns the removed widget, or `None` if the cell is empty or outside of the grid.
+    pub fn remove(&mut self, row: usize, column: usize) -> Option<SharedWidget> {
+        let previous = self
+            .cells
+            .get_mut(row)?
+            .get_mut(column)?
+            .take()
+            .map(|cell| cell.widget);
+        self.refresh_children();
+        previous
+    }
+
+    /// Removes the given `row` and its widgets. Following rows are shifted up.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `row` is out of bounds.
+    pub fn remove_row(&mut self, row: usize) {
+        self.cells.remove(row);
+        self.refresh_children();
+    }
+
+    /// Removes the given `column` and its widgets. Following columns are shifted left.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `column` is out of bounds.
+    pub fn remove_column(&mut self, column: usize) {
+        assert!(column < self.columns(), "column index out of bounds");
+        for cells in self.cells.iter_mut() {
+            cells.remove(column);
+        }
+        if self.columns() == 0 {
+            self.cells.clear();
+        }
+        self.refresh_children();
+    }
+
+    /// Removes all the widgets, leaving a grid with no rows and no columns.
+    pub fn clear(&mut self) {
+        self.resize(0, 0);
+    }
+
+    /// Sets the number of rows and columns. Widgets placed outside of the new bounds are removed,
+    /// and new cells are empty. If `rows` or `columns` is zero, the grid becomes empty.
+    pub fn resize(&mut self, rows: usize, columns: usize) {
+        if rows == 0 || columns == 0 {
+            self.cells.clear();
+        } else {
+            self.cells.resize_with(rows, Vec::new);
+            for cells in self.cells.iter_mut() {
+                cells.resize_with(columns, || None);
+            }
+        }
+        self.refresh_children();
+    }
+
+    /// Rebuilds the children list from the cells and requests a layout update.
+    fn refresh_children(&mut self) {
         self.core.children = self
             .cells
             .iter()
@@ -97,7 +164,7 @@ impl Grid {
             .flatten()
             .map(|cell| cell.widget.clone())
             .collect();
-        previous
+        self.core.request_layout();
     }
 
     /// Returns the minimum width of each column and the minimum height of each row.

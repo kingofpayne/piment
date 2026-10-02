@@ -22,12 +22,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   enter and escape keys, as well as clicking outside of the widget, release the focus.
 - A `LineBox` selects its whole text when it gains the focus. When the focus is gained by a
   click, the text is selected on release, unless a range has been selected by dragging.
+- `Grid::remove`, `Grid::remove_row`, `Grid::remove_column`, `Grid::clear` and `Grid::resize` to
+  edit a grid after its creation.
 
 ### Changed
 
 - The text selection of a `LineBox` is only displayed while it has the focus.
 - `Numeric` follows its text box behavior: the edition ends when the text box loses the focus, and
   the typed value is committed only if the text has changed.
+
+### Fixed
+
+- `Grid::insert` now requests a layout update, so inserted or replaced widgets are positioned
+  immediately.
 
 ## [0.2.0] - 2026-10-02
 
