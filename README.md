@@ -14,6 +14,10 @@ window.
 
 piment is in early development: the API may change between versions.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/kingofpayne/piment/master/example.png" alt="piment example">
+</p>
+
 ## License
 
 Licensed under either of
