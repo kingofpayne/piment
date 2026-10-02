@@ -1,5 +1,5 @@
 use glam::{Vec2, vec2};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::Duration};
 use winit::{
     event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     keyboard::KeyCode,
@@ -52,6 +52,13 @@ pub struct Input {
     keys_down: BTreeSet<Key>,
     /// Enteredd text.
     pub text: Option<String>,
+    /// Time elapsed since the application started.
+    pub time: Duration,
+    /// Time elapsed since the previous update. Zero for the updates notifying focus changes.
+    ///
+    /// This can be large after the application has been idle, so animations may need to clamp
+    /// it.
+    pub time_delta: Duration,
 }
 
 impl Input {
@@ -75,6 +82,8 @@ impl Input {
             key_release_value: None,
             keys_down: BTreeSet::new(),
             text: None,
+            time: Duration::ZERO,
+            time_delta: Duration::ZERO,
         }
     }
 
@@ -141,13 +150,14 @@ impl Input {
         self.mouse_move = self.mouse_pos - self.previous_mouse_pos;
     }
 
-    /// Returns a copy of this input without any event, keeping only the mouse position and the
-    /// keys down.
+    /// Returns a copy of this input without any event, keeping only the mouse position, the keys
+    /// down and the time.
     pub fn without_events(&self) -> Self {
         Self {
             mouse_pos: self.mouse_pos,
             previous_mouse_pos: self.mouse_pos,
             keys_down: self.keys_down.clone(),
+            time: self.time,
             ..Self::new()
         }
     }

@@ -1,5 +1,9 @@
 use crate::{graphics::Graphics, input::Input, rect::Rect, uid::Uid, widgets::SharedWidget};
-use std::{collections::VecDeque, mem::take};
+use std::{
+    collections::VecDeque,
+    mem::take,
+    time::{Duration, Instant},
+};
 use winit::window::CursorIcon;
 
 pub struct Root {
@@ -15,6 +19,13 @@ pub struct Root {
     pub exit_request: bool,
     /// Latest received input without its events, given to the updates notifying focus changes.
     idle_input: Input,
+    /// Start time of the application, to calculate [Input::time].
+    start: Instant,
+    /// [Input::time] of the latest update, to calculate [Input::time_delta].
+    last_update: Duration,
+    /// Set when a widget has requested an animation frame. Cleared by the application once the
+    /// next animation update is scheduled.
+    pub animation_request: bool,
 }
 
 impl Root {
@@ -27,6 +38,9 @@ impl Root {
             cursor: CursorIcon::Default,
             exit_request: false,
             idle_input: Input::new(),
+            start: Instant::now(),
+            last_update: Duration::ZERO,
+            animation_request: false,
         }
     }
 
@@ -44,8 +58,12 @@ impl Root {
     /// If the focus has changed, widgets are then updated again without any event, to notify the
     /// focus change.
     pub fn update(&mut self, graphics: &mut Graphics, input: &Input) {
+        let mut input = input.clone();
+        input.time = self.start.elapsed();
+        input.time_delta = input.time - self.last_update;
+        self.last_update = input.time;
         self.idle_input = input.without_events();
-        self.update_widgets(graphics, input);
+        self.update_widgets(graphics, &input);
         self.notify_focus_changes(graphics);
     }
 
@@ -102,6 +120,7 @@ impl Root {
     /// Walks all widgets to take into account their requests:
     /// - layout recalculation requests,
     /// - repaint requests,
+    /// - animation frame requests,
     /// - signals transfer to other widgets,
     /// - focus requests,
     /// - exit requests.
@@ -125,9 +144,11 @@ impl Root {
             let core = widget.core_mut();
             layout_request |= core.layout_request;
             _repaint_request |= core.repaint_request;
+            self.animation_request |= core.animation_request;
             self.exit_request |= core.exit_request;
             core.layout_request = false;
             core.repaint_request = false;
+            core.animation_request = false;
             core.exit_request = false;
             // Handle focus requests
             if let Some(target) = core.focus_request.take() {

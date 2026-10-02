@@ -24,12 +24,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   click, the text is selected on release, unless a range has been selected by dragging.
 - `Grid::remove`, `Grid::remove_row`, `Grid::remove_column`, `Grid::clear` and `Grid::resize` to
   edit a grid after its creation.
+- Animation support: `WidgetCore::request_animation_frame`, `Input::time` and `Input::time_delta`.
 
 ### Changed
 
 - The text selection of a `LineBox` is only displayed while it has the focus.
 - `Numeric` follows its text box behavior: the edition ends when the text box loses the focus, and
-  the typed value is committed only if the text has changed.
+  the typed value is committed only if the value has changed.
 
 ### Fixed
 

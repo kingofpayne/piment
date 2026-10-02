@@ -58,8 +58,15 @@ pub trait Widget {
     /// such operation until [Self::render] is called; this may avoids heavy operations on
     /// intermediate widget states.
     ///
+    /// Widgets are updated once without any event when the application starts, before the first
+    /// frame is rendered.
+    ///
     /// When the focus changes, all widgets are updated again with an input holding no event other
     /// than [Input::focus_gained] or [Input::focus_lost].
+    ///
+    /// When a widget has called [WidgetCore::request_animation_frame], all widgets are updated
+    /// again after the next frame is rendered, with an input holding no event other than
+    /// [Input::time_delta].
     fn update(&mut self, _graphics: &mut Graphics, _input: &Input) {}
 
     /// Paint the widget.
@@ -136,6 +143,9 @@ pub struct WidgetCore {
     pub layout_request: bool,
     /// When this flag is set to true, the UI will repaint as soon as possible.
     pub repaint_request: bool,
+    /// When this flag is set to true, the UI will run another update and render cycle after the
+    /// current one. This is cleared by the UI on each cycle.
+    pub animation_request: bool,
     /// Emitted signals
     /// First tuple item is the signal, second tuple is the target widget.
     pub signals: VecDeque<(Uid, Uid)>,
@@ -167,6 +177,7 @@ impl WidgetCore {
             cursor: CursorIcon::Default,
             layout_request: false,
             repaint_request: false,
+            animation_request: false,
             signals: VecDeque::new(),
             focus_request: None,
             focus_release: false,
@@ -226,6 +237,17 @@ impl WidgetCore {
     /// Requests the UI a repaint.
     pub fn request_repaint(&mut self) {
         self.repaint_request = true;
+    }
+
+    /// Requests the UI to run another update and render cycle after the current one, to animate
+    /// the widget.
+    ///
+    /// This must be called from [Widget::update], as the animation is part of the widget state.
+    /// The request only lasts for one cycle: while animating, the widget must request a new frame
+    /// on every update. Hidden widgets should stop requesting frames, as their requests are still
+    /// honored.
+    pub fn request_animation_frame(&mut self) {
+        self.animation_request = true;
     }
 
     /// Emit a signal that will be transmitted to the registered signal listeners.

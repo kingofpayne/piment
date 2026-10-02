@@ -146,6 +146,9 @@ struct AppState {
     /// border emits resize events faster than that. Applying each of them would starve redraws
     /// until the mouse button is released, so only the latest size is applied, once per frame.
     pending_size: Option<PhysicalSize<u32>>,
+    /// Set when a widget has requested an animation frame during the latest presented frame, so
+    /// that widgets are updated before the next one is rendered.
+    animation_pending: bool,
 }
 
 impl AppState {
@@ -163,6 +166,7 @@ impl AppState {
             input: Input::new(),
             root: Root::new(widget),
             pending_size: None,
+            animation_pending: false,
         }
     }
 
@@ -248,6 +252,12 @@ impl AppState {
         graphics.queue.submit([encoder.finish()]);
         graphics.window.pre_present_notify();
         surface_texture.present();
+
+        if self.root.animation_request {
+            self.root.animation_request = false;
+            self.animation_pending = true;
+            graphics.window.request_redraw();
+        }
     }
 }
 
@@ -276,6 +286,10 @@ impl ApplicationHandler<CustomEvent> for AppState {
         }
         window.set_visible(self.window_attributes.visible);
 
+        self.root.update(&mut graphics, &self.input);
+        if self.root.exit_request {
+            event_loop.exit();
+        }
         self.graphics = Some(graphics);
         window.request_redraw();
     }
@@ -292,6 +306,17 @@ impl ApplicationHandler<CustomEvent> for AppState {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
+                if self.animation_pending {
+                    self.animation_pending = false;
+                    self.root.update(
+                        self.graphics.as_mut().unwrap(),
+                        &self.input.without_events(),
+                    );
+                    if self.root.exit_request {
+                        event_loop.exit();
+                        return;
+                    }
+                }
                 self.render();
             }
             WindowEvent::MouseInput { .. }
