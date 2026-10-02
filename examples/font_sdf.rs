@@ -109,5 +109,5 @@ impl Widget for MainWidget {
 }
 
 fn main() {
-    App::new().run(MainWidget::new().shared());
+    App::new("Font SDF").run(MainWidget::new().shared());
 }

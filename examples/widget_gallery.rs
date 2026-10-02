@@ -87,5 +87,5 @@ impl Widget for MainWidget {
 }
 
 fn main() {
-    App::new().run(MainWidget::new().shared());
+    App::new("Widget gallery").run(MainWidget::new().shared());
 }

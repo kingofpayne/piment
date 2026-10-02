@@ -45,7 +45,7 @@ pub mod widgets;
 /// # use piment::App;
 /// # use piment::widgets::Share;
 /// let widget = Button::new("Hello world!").shared();
-/// let app = App::new().run(widget);
+/// let app = App::new("Hello").run(widget);
 /// ```
 pub struct App {
     event_loop: EventLoop<CustomEvent>,
@@ -56,7 +56,11 @@ pub struct App {
 
 impl App {
     /// Creates the context for running an application.
-    pub fn new() -> Self {
+    ///
+    /// `title` is shown in the window title bar.
+    pub fn new(title: &str) -> Self {
+        // Note: we made title arg mandatory because it is quite awkward when you get a default
+        // name in the title bar.
         let event_loop: EventLoop<CustomEvent> = EventLoop::with_user_event().build().unwrap();
         event_loop.set_control_flow(ControlFlow::Wait);
         let proxy = event_loop.create_proxy();
@@ -65,7 +69,7 @@ impl App {
             event_loop,
             proxy,
             images,
-            window_attributes: Window::default_attributes(),
+            window_attributes: Window::default_attributes().with_title(title),
         }
     }
 
@@ -114,7 +118,7 @@ impl App {
     /// # impl Widget for SomeWidget {
     /// #     impl_widget_core!();
     /// # }
-    /// let app = App::new();
+    /// let app = App::new("Example");
     /// let widget = SomeWidget::new(app.images().clone()).shared();
     /// app.run(widget);
     /// ```
@@ -125,7 +129,7 @@ impl App {
 
 impl Default for App {
     fn default() -> Self {
-        Self::new()
+        Self::new("")
     }
 }
 

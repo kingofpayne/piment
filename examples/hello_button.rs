@@ -69,5 +69,5 @@ impl Widget for MainWidget {
 }
 
 fn main() {
-    App::new().run(MainWidget::new().shared());
+    App::new("Hello button").run(MainWidget::new().shared());
 }
