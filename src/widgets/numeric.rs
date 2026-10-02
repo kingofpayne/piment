@@ -10,7 +10,7 @@ use crate::{
     widgets::{LineBox, Share, Shared, Widget, WidgetCore},
 };
 use glam::{Vec2, Vec4, vec2};
-use winit::{keyboard::KeyCode, window::CursorIcon};
+use winit::window::CursorIcon;
 
 /// Area of a [Numeric] widget.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -170,7 +170,6 @@ impl Numeric {
     fn start_editing(&mut self) {
         let mut line_box = self.line_box.borrow_mut();
         line_box.set_text(&self.value.to_string());
-        line_box.select_all();
         line_box.show();
         self.core.give_focus(line_box.uid());
         self.editing = true;
@@ -204,21 +203,17 @@ impl Numeric {
         }
     }
 
-    /// Handles the input while the value is edited in the text box.
-    fn update_editing(&mut self, input: &Input) {
+    /// Follows the text box while the value is edited: the edition ends when the text box loses
+    /// the focus, and the typed value is committed if the text has been submitted.
+    fn update_editing(&mut self) {
         let (submitted, line_box_focused) = {
             let line_box = self.line_box.borrow();
             (line_box.on_submit, line_box.core().focused())
         };
         if submitted {
             self.commit();
-            self.core.request_focus();
-        } else if line_box_focused && input.key_press(KeyCode::Escape) {
+        } else if !line_box_focused {
             self.stop_editing();
-            self.core.request_focus();
-        } else if input.mouse_left_press && !self.core.rect.contains(input.mouse_pos) {
-            // The focus is left untouched, as the clicked widget may have requested it.
-            self.commit();
         }
     }
 
@@ -308,7 +303,7 @@ impl Widget for Numeric {
         self.on_change = false;
 
         if self.editing {
-            self.update_editing(input);
+            self.update_editing();
         } else {
             self.update_idle(input);
         }

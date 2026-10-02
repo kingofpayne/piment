@@ -30,13 +30,18 @@ pub struct Input {
     pub mouse_pos: Vec2,
     /// Mouse displacement.
     pub mouse_move: Vec2,
-    /// For mouse events, this flag is true if the widget is directly hit by the mouse pointer and
-    /// not under another widget.
+    /// True if the widget is directly under the mouse pointer and not under another widget.
     pub hit: bool,
     /// True if the widget has focus.
     /// Widgets can request or give focus using [crate::widgets::WidgetCore::request_focus] or
     /// [crate::widgets::WidgetCore::give_focus].
     pub focus: bool,
+    /// True if the widget has gained the focus. This is raised during an update dedicated to the
+    /// focus change, without any other event.
+    pub focus_gained: bool,
+    /// True if the widget has lost the focus. This is raised during an update dedicated to the
+    /// focus change, without any other event.
+    pub focus_lost: bool,
     /// Scroll delta.
     pub scroll: Vec2,
     /// Keyboard key has been pressed.
@@ -63,6 +68,8 @@ impl Input {
             mouse_move: Vec2::ZERO,
             hit: false,
             focus: false,
+            focus_gained: false,
+            focus_lost: false,
             scroll: Vec2::ZERO,
             key_press_value: None,
             key_release_value: None,
@@ -132,6 +139,17 @@ impl Input {
             _ => {}
         }
         self.mouse_move = self.mouse_pos - self.previous_mouse_pos;
+    }
+
+    /// Returns a copy of this input without any event, keeping only the mouse position and the
+    /// keys down.
+    pub fn without_events(&self) -> Self {
+        Self {
+            mouse_pos: self.mouse_pos,
+            previous_mouse_pos: self.mouse_pos,
+            keys_down: self.keys_down.clone(),
+            ..Self::new()
+        }
     }
 
     /// Returns `true` if any mouse button is pressed.

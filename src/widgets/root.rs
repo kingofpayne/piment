@@ -5,20 +5,28 @@ use winit::window::CursorIcon;
 pub struct Root {
     pub widget: SharedWidget,
     focused: Uid,
+    /// Widget which had the focus during the previous update, to raise the focus change flags of
+    /// [Input].
+    update_focused: Uid,
     /// Current cursor icon. This member is used to remember the latest cursor asked to winit, to
     /// remove unnecessary calls to cursor change for each frame.
     cursor: CursorIcon,
     /// Set when a widget has requested the application to exit. Never cleared.
     pub exit_request: bool,
+    /// Latest received input without its events, given to the updates notifying focus changes.
+    idle_input: Input,
 }
 
 impl Root {
     pub fn new(widget: SharedWidget) -> Self {
+        let focused = Uid::new();
         Self {
             widget,
-            focused: Uid::new(),
+            focused,
+            update_focused: focused,
             cursor: CursorIcon::Default,
             exit_request: false,
+            idle_input: Input::new(),
         }
     }
 
@@ -29,16 +37,26 @@ impl Root {
     /// Forwards the event to all widgets in the interface.
     ///
     /// Child widgets are updated before their parents. This method also performs mouse interaction
-    /// hit test: only the top-most widget will receive mouse events with the `hit` flag set to
-    /// true. For instance, when clicking on a menu, the menu will have the `hit` flag while the
+    /// hit test: only the top-most widget under the mouse pointer will receive the `hit` flag set
+    /// to true. For instance, when clicking on a menu, the menu will have the `hit` flag while the
     /// widget below won't.
+    ///
+    /// If the focus has changed, widgets are then updated again without any event, to notify the
+    /// focus change.
     pub fn update(&mut self, graphics: &mut Graphics, input: &Input) {
+        self.idle_input = input.without_events();
+        self.update_widgets(graphics, input);
+        self.notify_focus_changes(graphics);
+    }
+
+    /// Updates all widgets with `input`, then handles their requests.
+    fn update_widgets(&mut self, graphics: &mut Graphics, input: &Input) {
         let mut hit_widget: Option<SharedWidget> = None;
         let widgets = self.list_widgets();
+        let focus_changed = self.focused != self.update_focused;
         // Update from children up to parents
         for item in widgets.iter().rev() {
-            // For mouse events, we set hit flag for top-most widget (the widget which is directly
-            // under the cursor).
+            // We set hit flag for top-most widget (the widget which is directly under the cursor).
             let mut filtered_input = input.clone();
             if hit_widget.is_none() {
                 let w = item.widget.borrow();
@@ -49,11 +67,12 @@ impl Root {
             }
             let mut widget = item.widget.borrow_mut();
             let uid = widget.core().uid;
-            if self.focused == uid {
-                filtered_input.focus = true;
-            }
+            filtered_input.focus = self.focused == uid;
+            filtered_input.focus_gained = focus_changed && self.focused == uid;
+            filtered_input.focus_lost = focus_changed && self.update_focused == uid;
             widget.update(graphics, &filtered_input);
         }
+        self.update_focused = self.focused;
         // The cursor is read after the update, as widgets may change it depending on the pointer
         // position.
         if let Some(widget) = hit_widget {
@@ -66,6 +85,18 @@ impl Root {
         // When widgets update, their may raise flags and signals in their WidgetCore member. We
         // must parse the widgets and satisfy their requests.
         self.handle_requests(graphics, &widgets);
+    }
+
+    /// Updates all widgets without any event while the focus changes, so that widgets receive
+    /// [Input::focus_gained] and [Input::focus_lost] before being rendered.
+    ///
+    /// If widgets keep moving the focus on each focus change, this is not detected and loops
+    /// forever.
+    fn notify_focus_changes(&mut self, graphics: &mut Graphics) {
+        while self.focused != self.update_focused {
+            let input = self.idle_input.clone();
+            self.update_widgets(graphics, &input);
+        }
     }
 
     /// Walks all widgets to take into account their requests:
@@ -87,6 +118,8 @@ impl Root {
         let mut layout_request = false;
         let mut _repaint_request = false;
         let previous_focused = self.focused;
+        let mut focus_requested = false;
+        let mut focus_release = false;
         while let Some(widget) = todo.pop_front() {
             let mut widget = widget.borrow_mut();
             let core = widget.core_mut();
@@ -99,7 +132,9 @@ impl Root {
             // Handle focus requests
             if let Some(target) = core.focus_request.take() {
                 self.focused = target;
+                focus_requested = true;
             }
+            focus_release |= take(&mut core.focus_release);
             // Handle signals
             // Clear list from core using take.
             let signals = take(&mut core.signals);
@@ -114,6 +149,12 @@ impl Root {
                     todo.push_back(item.widget.clone());
                 }
             }
+        }
+        // A release must not cancel a request made by another widget, for instance the one which
+        // has just been clicked, whatever their order in the tree.
+        if focus_release && !focus_requested {
+            // A new random UID matches no widget.
+            self.focused = Uid::new();
         }
         // Update the focus flags once no widget is borrowed anymore, as the widget requesting the
         // focus may be the previous or the new focus holder.
@@ -144,6 +185,7 @@ impl Root {
             }
         }
         self.handle_requests(graphics, &widgets);
+        self.notify_focus_changes(graphics);
     }
 
     /// Renders the visible widgets of the interface.

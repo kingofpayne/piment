@@ -57,6 +57,9 @@ pub trait Widget {
     /// event may trigger graphics calculation, such as updating a texture, it is advised to delay
     /// such operation until [Self::render] is called; this may avoids heavy operations on
     /// intermediate widget states.
+    ///
+    /// When the focus changes, all widgets are updated again with an input holding no event other
+    /// than [Input::focus_gained] or [Input::focus_lost].
     fn update(&mut self, _graphics: &mut Graphics, _input: &Input) {}
 
     /// Paint the widget.
@@ -139,6 +142,9 @@ pub struct WidgetCore {
     /// When set, widget request focus to be transferred to the given widget UID.
     /// Target can be self.
     pub focus_request: Option<Uid>,
+    /// When set, widget requests the focus to be removed. Has lower priority than
+    /// [Self::focus_request].
+    pub focus_release: bool,
     /// When this flag is set to true, the application closes its window and [crate::App::run]
     /// returns.
     pub exit_request: bool,
@@ -163,6 +169,7 @@ impl WidgetCore {
             repaint_request: false,
             signals: VecDeque::new(),
             focus_request: None,
+            focus_release: false,
             exit_request: false,
             focused: false,
         }
@@ -235,6 +242,12 @@ impl WidgetCore {
     /// Request the focus to be given to the specified widget.
     pub fn give_focus(&mut self, target: Uid) {
         self.focus_request = Some(target);
+    }
+
+    /// Request the focus to be removed, leaving no widget focused. This is ignored if a widget
+    /// requests the focus during the same update.
+    pub fn release_focus(&mut self) {
+        self.focus_release = true;
     }
 
     /// Requests the application to close its window, making [crate::App::run] return.

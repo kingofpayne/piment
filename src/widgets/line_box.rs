@@ -1,6 +1,3 @@
-use glam::{Vec2, Vec4, vec2};
-use winit::{keyboard::KeyCode, window::CursorIcon};
-
 use crate::{
     color::Color,
     font::{Font, TextHorizontalAlign},
@@ -12,6 +9,8 @@ use crate::{
     theme::THEME,
     widgets::{Widget, WidgetCore},
 };
+use glam::{Vec2, Vec4, vec2};
+use winit::{keyboard::KeyCode, window::CursorIcon};
 
 /// A single line text box.
 pub struct LineBox {
@@ -19,6 +18,8 @@ pub struct LineBox {
     core: WidgetCore,
     /// Text being edited.
     text: String,
+    /// Text when the edition started, restored by the escape key.
+    initial_text: String,
     /// Character index where the current selection started.
     cursor_start: usize,
     /// Character index of the cursor.
@@ -28,9 +29,13 @@ pub struct LineBox {
     scroll: f32,
     /// True while the user is selecting text by dragging the mouse.
     selecting: bool,
+    /// True while the mouse button which gave the focus is held, to select the whole text when it
+    /// is released, unless a range has been selected by dragging.
+    select_all_on_release: bool,
     /// Set to true on the frames the text has been edited by the user.
     pub on_change: bool,
-    /// Set to true on the frame the user presses the enter key.
+    /// Set to true on the frame the user presses the enter key or the focus is lost, only if the
+    /// text has changed since the edition started.
     pub on_submit: bool,
 }
 
@@ -47,10 +52,12 @@ impl LineBox {
         Self {
             core: WidgetCore::new().with_cursor(CursorIcon::Text),
             text: String::new(),
+            initial_text: String::new(),
             cursor_start: 0,
             cursor_end: 0,
             scroll: 0.0,
             selecting: false,
+            select_all_on_release: false,
             on_change: false,
             on_submit: false,
         }
@@ -67,9 +74,11 @@ impl LineBox {
         &self.text
     }
 
-    /// Replaces the text and moves the cursor at its end.
+    /// Replaces the text and moves the cursor at its end. The new text is not considered as a
+    /// user edit: it is the one restored by the escape key and won't raise [Self::on_submit].
     pub fn set_text(&mut self, text: &str) {
         self.text = text.into();
+        self.initial_text = self.text.clone();
         self.set_cursor(self.char_count());
     }
 
@@ -203,6 +212,15 @@ impl LineBox {
         self.set_cursor(self.cursor_end + text.chars().count());
     }
 
+    /// Raises [Self::on_submit] if the text has changed since the edition started, and makes the
+    /// current text the new initial one.
+    fn submit(&mut self) {
+        if self.text != self.initial_text {
+            self.initial_text = self.text.clone();
+            self.on_submit = true;
+        }
+    }
+
     /// Handles the keyboard keys moving the cursor or editing the text.
     fn update_from_keyboard(&mut self, input: &Input) {
         let extend = input.shift_key_down();
@@ -240,7 +258,15 @@ impl LineBox {
                 self.on_change = true;
             }
         } else if input.key_press(KeyCode::Enter) {
-            self.on_submit = true;
+            self.submit();
+            self.core.release_focus();
+        } else if input.key_press(KeyCode::Escape) {
+            if self.text != self.initial_text {
+                self.text = self.initial_text.clone();
+                self.set_cursor(self.char_count());
+                self.on_change = true;
+            }
+            self.core.release_focus();
         } else if input.key_press(KeyCode::KeyA) && input.control_key_down() {
             self.select_all();
         }
@@ -277,11 +303,26 @@ impl Widget for LineBox {
         self.on_change = false;
         self.on_submit = false;
 
-        if input.mouse_left_press && input.hit && self.core.hover {
-            self.core.request_focus();
-            let index = self.index_at_x(&graphics.font, input.mouse_pos.x);
-            self.move_cursor(index, input.shift_key_down());
-            self.selecting = true;
+        if input.focus_gained {
+            self.initial_text = self.text.clone();
+            // When the focus is gained by a click, the text is selected on release instead.
+            if !self.selecting {
+                self.select_all();
+            }
+        } else if input.focus_lost {
+            self.submit();
+        }
+
+        if input.mouse_left_press {
+            if input.hit && self.core.hover {
+                self.select_all_on_release = !self.core.focused();
+                self.core.request_focus();
+                let index = self.index_at_x(&graphics.font, input.mouse_pos.x);
+                self.move_cursor(index, input.shift_key_down());
+                self.selecting = true;
+            } else if self.core.focused() {
+                self.core.release_focus();
+            }
         }
 
         if self.selecting {
@@ -291,6 +332,10 @@ impl Widget for LineBox {
             }
             if input.mouse_left_release {
                 self.selecting = false;
+                if self.select_all_on_release && self.cursor_start == self.cursor_end {
+                    self.select_all();
+                }
+                self.select_all_on_release = false;
             }
         }
 
@@ -346,7 +391,7 @@ impl Widget for LineBox {
 
         // Selection
         let (start, end) = self.selection();
-        if start != end {
+        if start != end && self.core.focused() {
             graphics.painter.rectangle(
                 Rect::new(
                     origin + self.char_offset(&graphics.font, start),

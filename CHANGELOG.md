@@ -7,9 +7,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- `LineBox::on_submit` is now raised when the enter key is pressed or when the focus is lost, and
+  only if the text has changed since the edition started.
+
 ### Added
 
 - `WidgetCore::request_exit` to let a widget ask the application to close.
+- `WidgetCore::release_focus` to leave no widget focused.
+- `Input::focus_gained` and `Input::focus_lost`. When the focus changes, widgets are updated again
+  with an input holding only these focus events.
+- Pressing the escape key in a `LineBox` restores the text it had when the edition started. The
+  enter and escape keys, as well as clicking outside of the widget, release the focus.
+- A `LineBox` selects its whole text when it gains the focus. When the focus is gained by a
+  click, the text is selected on release, unless a range has been selected by dragging.
+
+### Changed
+
+- The text selection of a `LineBox` is only displayed while it has the focus.
+- `Numeric` follows its text box behavior: the edition ends when the text box loses the focus, and
+  the typed value is committed only if the text has changed.
 
 ## [0.2.0] - 2026-10-02
 
