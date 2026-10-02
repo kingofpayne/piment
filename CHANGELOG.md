@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `LineBox::on_submit` is now raised when the enter key is pressed or when the focus is lost, and
   only if the text has changed since the edition started.
+- The `color` and `vertex` modules are now private: `Color` and `Vertex` are re-exported at the
+  crate root as `piment::Color` and `piment::Vertex`.
 
 ### Added
 

@@ -22,7 +22,7 @@ use winit::{
 
 pub mod axis;
 pub mod buffer;
-pub mod color;
+mod color;
 pub mod event;
 pub mod font;
 pub mod font_sdf;
@@ -35,8 +35,11 @@ pub mod rect;
 pub mod texture_manager;
 pub mod theme;
 pub mod uid;
-pub mod vertex;
+mod vertex;
 pub mod widgets;
+
+pub use color::Color;
+pub use vertex::Vertex;
 
 /// Context for running a widget as an application.
 ///

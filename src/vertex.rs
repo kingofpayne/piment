@@ -8,7 +8,7 @@ use glam::{Vec2, Vec4};
 /// color or texture coordinates:
 ///
 /// ```
-/// # use piment::vertex::Vertex;
+/// # use piment::Vertex;
 /// let v = Vertex::from_xy(1.0, 2.0).uv(0.0, 1.0).rgba1(1.0, 0.0, 0.0, 1.0);
 /// ```
 #[repr(C)]

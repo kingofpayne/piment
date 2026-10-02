@@ -3,8 +3,7 @@
 
 use glam::{Vec2, vec2};
 use piment::{
-    App,
-    color::Color,
+    App, Color,
     font_sdf::FontSdf,
     graphics::Graphics,
     impl_widget_core,
