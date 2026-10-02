@@ -223,12 +223,15 @@ impl Numeric {
     }
 
     /// Returns the background color of the arrow at `zone`. The whole widget is dark while
-    /// pressed, whatever the zone the press started in.
+    /// pressed, whatever the zone the press started in. While the middle area is hovered, the
+    /// arrows keep the idle button color so that only the middle area is highlighted.
     fn arrow_color(&self, zone: Zone) -> Color {
         if self.pressed.is_some() {
             THEME.text_background_color
         } else if self.hover_zone == Some(zone) {
             Self::ARROW_HOVER_COLOR
+        } else if self.hover_zone == Some(Zone::Value) {
+            THEME.button_idle_color
         } else {
             Self::ARROW_IDLE_COLOR
         }
