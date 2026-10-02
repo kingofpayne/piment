@@ -7,10 +7,18 @@ use piment::{
     graphics::Graphics,
     impl_widget_core,
     widgets::{
-        Button, CheckBox, Grid, Label, LineBox, Numeric, Panel, RootMenu, Share, Shared,
-        SharedWidget, Widget, WidgetCore,
+        Button, CheckBox, CollapsiblePanel, Grid, Label, Layout, LineBox, Numeric, Panel, RootMenu,
+        Share, Shared, SharedWidget, Widget, WidgetCore,
     },
 };
+
+/// Builds a collapsible panel holding a button and a checkbox.
+fn build_collapsible_panel() -> CollapsiblePanel {
+    let mut content = Layout::vertical();
+    content.add(Button::new("Inner button").shared());
+    content.add(CheckBox::new().with_label("Inner checkbox").shared());
+    CollapsiblePanel::new("Header").with_child(content.shared())
+}
 
 /// Builds a menu with a single button opening three sub-menus.
 fn build_menu() -> RootMenu {
@@ -36,7 +44,7 @@ struct MainWidget {
 
 impl MainWidget {
     fn new() -> Self {
-        let rows: [(&str, SharedWidget); 6] = [
+        let rows: [(&str, SharedWidget); 7] = [
             ("RootMenu", build_menu().shared()),
             ("Label", Label::new("Some text").shared()),
             ("Button", Button::new("Click me").shared()),
@@ -50,6 +58,7 @@ impl MainWidget {
                     .with_value(42.0)
                     .shared(),
             ),
+            ("CollapsiblePanel", build_collapsible_panel().shared()),
         ];
 
         let mut grid = Grid::new();

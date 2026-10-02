@@ -1,5 +1,6 @@
 mod button;
 mod checkbox;
+mod collapsible_panel;
 mod grid;
 mod label;
 mod layout;
@@ -14,6 +15,7 @@ mod widget;
 
 pub use button::Button;
 pub use checkbox::CheckBox;
+pub use collapsible_panel::CollapsiblePanel;
 pub use grid::Grid;
 pub use label::Label;
 pub use layout::Layout;
