@@ -8,6 +8,8 @@ pub struct Root {
     /// Current cursor icon. This member is used to remember the latest cursor asked to winit, to
     /// remove unnecessary calls to cursor change for each frame.
     cursor: CursorIcon,
+    /// Set when a widget has requested the application to exit. Never cleared.
+    pub exit_request: bool,
 }
 
 impl Root {
@@ -16,6 +18,7 @@ impl Root {
             widget,
             focused: Uid::new(),
             cursor: CursorIcon::Default,
+            exit_request: false,
         }
     }
 
@@ -69,7 +72,8 @@ impl Root {
     /// - layout recalculation requests,
     /// - repaint requests,
     /// - signals transfer to other widgets,
-    /// - focus requests.
+    /// - focus requests,
+    /// - exit requests.
     ///
     /// When handling signals, listening widgets are updated and may perform even more requests.
     /// This method handles this and loops until no more widgets emit signals.
@@ -88,8 +92,10 @@ impl Root {
             let core = widget.core_mut();
             layout_request |= core.layout_request;
             _repaint_request |= core.repaint_request;
+            self.exit_request |= core.exit_request;
             core.layout_request = false;
             core.repaint_request = false;
+            core.exit_request = false;
             // Handle focus requests
             if let Some(target) = core.focus_request.take() {
                 self.focused = target;

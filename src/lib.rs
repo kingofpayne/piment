@@ -300,6 +300,9 @@ impl ApplicationHandler<CustomEvent> for AppState {
             | WindowEvent::KeyboardInput { .. } => {
                 self.root
                     .update(self.graphics.as_mut().unwrap(), &self.input);
+                if self.root.exit_request {
+                    event_loop.exit();
+                }
                 self.graphics.as_ref().unwrap().window.request_redraw();
             }
             WindowEvent::Resized(size) => {
@@ -312,10 +315,13 @@ impl ApplicationHandler<CustomEvent> for AppState {
 
     /// Handles custom events sent by winit proxies, usually from threads to wake-up and notify the
     /// main loop.
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: CustomEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: CustomEvent) {
         let CustomEvent::Signal((signal, listener)) = event;
         if let Some(graphics) = &mut self.graphics {
             self.root.signal(graphics, signal, listener);
+        }
+        if self.root.exit_request {
+            event_loop.exit();
         }
         self.graphics.as_ref().unwrap().window.request_redraw();
     }

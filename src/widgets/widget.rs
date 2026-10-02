@@ -139,6 +139,9 @@ pub struct WidgetCore {
     /// When set, widget request focus to be transferred to the given widget UID.
     /// Target can be self.
     pub focus_request: Option<Uid>,
+    /// When this flag is set to true, the application closes its window and [crate::App::run]
+    /// returns.
+    pub exit_request: bool,
     /// Whether the widget has the focus. Only written by [crate::widgets::Root] when the focus
     /// is transferred, so it is up to date when widgets are rendered.
     pub(crate) focused: bool,
@@ -160,6 +163,7 @@ impl WidgetCore {
             repaint_request: false,
             signals: VecDeque::new(),
             focus_request: None,
+            exit_request: false,
             focused: false,
         }
     }
@@ -231,6 +235,11 @@ impl WidgetCore {
     /// Request the focus to be given to the specified widget.
     pub fn give_focus(&mut self, target: Uid) {
         self.focus_request = Some(target);
+    }
+
+    /// Requests the application to close its window, making [crate::App::run] return.
+    pub fn request_exit(&mut self) {
+        self.exit_request = true;
     }
 
     /// Returns whether the widget has the focus.
