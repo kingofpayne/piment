@@ -9,8 +9,7 @@ use crate::{
 };
 use glam::{Vec2, Vec4, vec2};
 
-/// Vertical or horizontal scrollbar widget that can be integrated in other widgets, such as
-/// [crate::ux::widgets::list_box::ListBox].
+/// Vertical or horizontal scrollbar widget that can be integrated in other widgets.
 pub struct ScrollBar {
     /// Widget common properties.
     core: WidgetCore,

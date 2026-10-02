@@ -24,6 +24,6 @@ pub use menu::{MenuItem, RootMenu};
 pub use multipage::MultiPage;
 pub use numeric::Numeric;
 pub use panel::Panel;
-pub use root::Root;
+pub(crate) use root::Root;
 pub use scroll_bar::ScrollBar;
 pub use widget::{Share, Shared, SharedWidget, Signal, Widget, WidgetCore};

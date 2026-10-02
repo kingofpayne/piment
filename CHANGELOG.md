@@ -13,6 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   only if the text has changed since the edition started.
 - The `color` and `vertex` modules are now private: `Color` and `Vertex` are re-exported at the
   crate root as `piment::Color` and `piment::Vertex`.
+- `widgets::Root` is no longer public.
 
 ### Added
 
