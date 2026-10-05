@@ -141,10 +141,10 @@ impl Font {
         let width = atlas.width() as f32;
         let height = atlas.height() as f32;
         for glyph in atlas.glyphs_mut() {
-            let u1 = glyph.x as f32 / width;
-            let v1 = glyph.y as f32 / height;
-            let u2 = u1 + glyph.w as f32 / width;
-            let v2 = v1 + glyph.h as f32 / height;
+            let u1 = *glyph.x as f32 / width;
+            let v1 = *glyph.y as f32 / height;
+            let u2 = u1 + *glyph.w as f32 / width;
+            let v2 = v1 + *glyph.h as f32 / height;
             glyph.data.uv = vec4(u1, v1, u2, v2);
         }
 

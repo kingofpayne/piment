@@ -28,9 +28,15 @@ impl<K: Ord, D, P: Pixel<Subpixel = u8>> Atlas<K, D, P> {
         self.glyphs.get(key)
     }
 
-    /// Returns every glyph of the atlas.
-    pub(crate) fn glyphs_mut(&mut self) -> impl Iterator<Item = &mut Glyph<D, P>> {
-        self.glyphs.values_mut()
+    /// Returns every glyph of the atlas, with only the glyph data being modifiable.
+    pub(crate) fn glyphs_mut(&mut self) -> impl Iterator<Item = GlyphRef<'_, D>> {
+        self.glyphs.values_mut().map(|glyph| GlyphRef {
+            data: &mut glyph.data,
+            x: &glyph.x,
+            y: &glyph.y,
+            w: &glyph.w,
+            h: &glyph.h,
+        })
     }
 
     /// Returns the atlas image.
@@ -136,4 +142,18 @@ pub(crate) struct Glyph<D, P: Pixel<Subpixel = u8>> {
     /// Kepts aside the whole image so we can dynamically rebuild the atlas when new glyphs are
     /// added.
     image: ImageBuffer<P, Vec<u8>>,
+}
+
+/// Atlas glyph view where only the extra data can be modified.
+pub(crate) struct GlyphRef<'a, D> {
+    /// Extra glyph data unrelated to glyph packing in the atlas.
+    pub(crate) data: &'a mut D,
+    /// X offset in the atlas image.
+    pub(crate) x: &'a i32,
+    /// Y offset in the atlas image.
+    pub(crate) y: &'a i32,
+    /// Width in the atlas image.
+    pub(crate) w: &'a i32,
+    /// Height in the atlas image.
+    pub(crate) h: &'a i32,
 }
