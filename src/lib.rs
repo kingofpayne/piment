@@ -20,6 +20,7 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
+mod atlas;
 pub mod axis;
 pub mod buffer;
 mod color;
@@ -38,6 +39,7 @@ pub mod uid;
 mod vertex;
 pub mod widgets;
 
+pub use atlas::Atlas;
 pub use color::Color;
 pub use vertex::Vertex;
 

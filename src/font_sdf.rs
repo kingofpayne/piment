@@ -1,5 +1,6 @@
 use crate::{
-    font::{Atlas, CHARACTERS, TextHorizontalAlign, TextLayout, TextLayoutGlyph, system_font_data},
+    Atlas,
+    font::{CHARACTERS, TextHorizontalAlign, TextLayout, TextLayoutGlyph, system_font_data},
     rect::Rect,
     texture_manager::create_texture_from_image,
 };
