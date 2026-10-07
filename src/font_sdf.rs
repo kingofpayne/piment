@@ -107,22 +107,21 @@ impl FontSdf {
                 // Characters such as the space have nothing to render at all.
                 _ => (GrayImage::new(0, 0), 0, 0),
             };
-            atlas.insert(
-                char,
-                image,
-                FontSdfGlyph {
-                    x: x as f32,
-                    y: y as f32,
-                    advance: metrics.advance_width(id),
-                    uv: Vec4::ZERO,
-                },
-            );
+            atlas
+                .insert(
+                    char,
+                    image,
+                    FontSdfGlyph {
+                        x: x as f32,
+                        y: y as f32,
+                        advance: metrics.advance_width(id),
+                        uv: Vec4::ZERO,
+                    },
+                )
+                .unwrap();
         }
 
-        atlas.rebuild();
-
-        // Packing is only known once the atlas is built, so texture coordinates are calculated
-        // afterwards.
+        // Repacking changes glyph positions, so calculate texture coordinates afterwards.
         let width = atlas.image().width() as f32;
         let height = atlas.image().height() as f32;
         for glyph in atlas.glyphs_mut() {

@@ -1,4 +1,4 @@
-use crate::{Atlas, rect::Rect};
+use crate::{TextureAtlas, rect::Rect};
 use font_kit::{
     family_name::FamilyName, handle::Handle, properties::Properties, source::SystemSource,
 };
@@ -10,10 +10,7 @@ use swash::{
     scale::{Render, ScaleContext, Source, image::Image},
     zeno::{Cap, Format, Join, Stroke},
 };
-use wgpu::{
-    Device, Extent3d, Origin3d, Queue, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture,
-    TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-};
+use wgpu::{Device, Queue, Texture};
 
 /// Characters rasterized in the atlas.
 pub(crate) const CHARACTERS: &str = concat!(
@@ -35,11 +32,9 @@ const ATLAS_SIZE: u32 = 1024;
 
 pub struct Font {
     /// Glyphs atlas
-    atlas: Atlas<FontGlyphKey, FontGlyph>,
+    atlas: TextureAtlas<FontGlyphKey, FontGlyph>,
     /// Character set ink extents for each built font size.
     metrics: BTreeMap<i32, Metrics>,
-    /// WGPU texture
-    texture: Option<Texture>,
 }
 
 /// How far the ink of a rasterized character set reaches on both sides of the baseline, in pixels.
@@ -78,7 +73,7 @@ impl Font {
         let font = FontRef::from_index(data, index as usize).expect("Failed to parse font file");
         let charmap = font.charmap();
         let mut context = ScaleContext::new();
-        let mut atlas = Atlas::new(ATLAS_SIZE, ATLAS_SIZE);
+        let mut atlas = TextureAtlas::new(ATLAS_SIZE, ATLAS_SIZE);
         let mut metrics_by_size = BTreeMap::new();
 
         // Round the stroke corners and ends, as the sharp spikes a miter join makes on the
@@ -113,16 +108,19 @@ impl Font {
                 }
 
                 let (image, x, y) = tile(plain.as_ref(), outline.as_ref(), sigma);
-                atlas.insert(
-                    FontGlyphKey { scale, char },
-                    image,
-                    FontGlyph {
-                        x,
-                        y,
-                        advance: metrics.advance_width(id).round() as i32,
-                        uv: Vec4::ZERO,
-                    },
-                );
+                atlas
+                    .inner_mut()
+                    .insert(
+                        FontGlyphKey { scale, char },
+                        image,
+                        FontGlyph {
+                            x,
+                            y,
+                            advance: metrics.advance_width(id).round() as i32,
+                            uv: Vec4::ZERO,
+                        },
+                    )
+                    .unwrap();
             }
 
             metrics_by_size.insert(
@@ -134,12 +132,9 @@ impl Font {
             );
         }
 
-        atlas.rebuild();
-
-        // Packing is only known once the atlas is built, so texture coordinates are calculated
-        // afterwards.
-        let width = atlas.width() as f32;
-        let height = atlas.height() as f32;
+        // Repacking changes glyph positions, so calculate texture coordinates afterwards.
+        let width = atlas.inner().width() as f32;
+        let height = atlas.inner().height() as f32;
         for glyph in atlas.glyphs_mut() {
             let u1 = *glyph.x as f32 / width;
             let v1 = *glyph.y as f32 / height;
@@ -151,49 +146,16 @@ impl Font {
         Self {
             atlas,
             metrics: metrics_by_size,
-            texture: None,
         }
     }
 
-    /// Builds the WGPU texture from the atlas image.
-    pub fn build_texture(&mut self, device: &Device, queue: &Queue) {
-        let image = self.atlas.image();
-        let size = Extent3d {
-            width: image.width(),
-            height: image.height(),
-            depth_or_array_layers: 1,
-        };
-        let texture = device.create_texture(&TextureDescriptor {
-            label: None,
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            image,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * image.width()),
-                rows_per_image: Some(image.height()),
-            },
-            size,
-        );
-        self.texture = Some(texture);
+    pub fn update_texture(&mut self, device: &Device, queue: &Queue) {
+        self.atlas.update_texture(device, queue);
     }
 
     /// Returns the atlas texture, or `None` if [Self::build_texture] has not been called yet.
     pub fn texture(&self) -> Option<&Texture> {
-        self.texture.as_ref()
+        self.atlas.texture()
     }
 
     /// Returns the tallest character ink above the baseline for the given font `size`.
@@ -210,7 +172,11 @@ impl Font {
     pub fn text_width(&self, text: &str, size: i32) -> f32 {
         let mut x = 0.0;
         for char in text.chars() {
-            let Some(glyph) = self.atlas.glyph(&FontGlyphKey { scale: size, char }) else {
+            let Some(glyph) = self
+                .atlas
+                .inner()
+                .glyph(&FontGlyphKey { scale: size, char })
+            else {
                 continue;
             };
             x += glyph.data.advance as f32;
@@ -241,7 +207,11 @@ impl Font {
         let baseline = (rect.v_center() + (self.ascent(size) - self.descent(size)) / 2.0).round();
         let mut bounds = Rect::new(x, rect.y1, x, rect.y1);
         for char in text.chars() {
-            let Some(glyph) = self.atlas.glyph(&FontGlyphKey { scale: size, char }) else {
+            let Some(glyph) = self
+                .atlas
+                .inner()
+                .glyph(&FontGlyphKey { scale: size, char })
+            else {
                 continue;
             };
             // Some characters, such as " ", have no image.

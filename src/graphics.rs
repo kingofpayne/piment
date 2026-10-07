@@ -73,7 +73,7 @@ impl Graphics {
         surface.configure(&device, &surface_config);
 
         let mut font = Font::from_system(&[THEME.font_size]);
-        font.build_texture(&device, &queue);
+        font.update_texture(&device, &queue);
 
         let painter = Painter::new(
             &device,

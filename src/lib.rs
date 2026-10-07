@@ -36,10 +36,11 @@ pub mod rect;
 pub mod texture_manager;
 pub mod theme;
 pub mod uid;
+mod util;
 mod vertex;
 pub mod widgets;
 
-pub use atlas::Atlas;
+pub use atlas::{Atlas, TextureAtlas};
 pub use color::Color;
 pub use vertex::Vertex;
 
@@ -251,6 +252,13 @@ impl AppState {
             0.0,
             1.0,
         );
+
+        // Font glyphs may be created on the fly during widgets rendering.
+        // The atlas keeps a dirty flag and need to update the texture to the GPU when the image has
+        // been modified.
+        graphics
+            .font
+            .update_texture(&graphics.device, &graphics.queue);
 
         graphics.painter.render(&mut render_pass);
         drop(render_pass);
