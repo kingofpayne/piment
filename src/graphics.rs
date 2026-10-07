@@ -1,6 +1,6 @@
 use crate::{
     event::CustomEvent, font::Font, image_cache::ImageCache, painter::Painter,
-    texture_manager::TextureManager, theme::THEME,
+    texture_manager::TextureManager,
 };
 use glam::uvec2;
 use image::{GrayImage, ImageBuffer, Luma};
@@ -72,7 +72,7 @@ impl Graphics {
         };
         surface.configure(&device, &surface_config);
 
-        let mut font = Font::from_system(&[THEME.font_size]);
+        let mut font = Font::from_system();
         font.update_texture(&device, &queue);
 
         let painter = Painter::new(

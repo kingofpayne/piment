@@ -452,7 +452,7 @@ impl Painter {
         }
     }
 
-    pub fn text(&mut self, font: &Font, text: &str, rect: Rect, style: FontStyle) {
+    pub fn text(&mut self, font: &mut Font, text: &str, rect: Rect, style: FontStyle) {
         if text.is_empty() {
             return;
         }

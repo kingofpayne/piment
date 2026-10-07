@@ -149,13 +149,13 @@ impl LineBox {
 
     /// Returns the distance in pixels between the beginning of the text and the character at
     /// `index`.
-    fn char_offset(&self, font: &Font, index: usize) -> f32 {
+    fn char_offset(&self, font: &mut Font, index: usize) -> f32 {
         font.text_width(&self.text[..self.byte_index(index)], THEME.font_size)
     }
 
     /// Returns the index of the character boundary which is the closest to the window abscissa
     /// `x`.
-    fn index_at_x(&self, font: &Font, x: f32) -> usize {
+    fn index_at_x(&self, font: &mut Font, x: f32) -> usize {
         let x = x - self.text_origin();
         let mut offset = 0.0;
         let mut buffer = [0u8; 4];
@@ -170,7 +170,7 @@ impl LineBox {
     }
 
     /// Updates [Self::scroll] to keep the cursor visible in the widget.
-    fn scroll_to_cursor(&mut self, font: &Font) {
+    fn scroll_to_cursor(&mut self, font: &mut Font) {
         let width = self.text_rect().width();
         // Don't leave a gap on the right when the text has been shortened.
         let text_width = font.text_width(&self.text, THEME.font_size);
@@ -317,7 +317,7 @@ impl Widget for LineBox {
             if input.hit && self.core.hover {
                 self.select_all_on_release = !self.core.focused();
                 self.core.request_focus();
-                let index = self.index_at_x(&graphics.font, input.mouse_pos.x);
+                let index = self.index_at_x(&mut graphics.font, input.mouse_pos.x);
                 self.move_cursor(index, input.shift_key_down());
                 self.selecting = true;
             } else if self.core.focused() {
@@ -327,7 +327,7 @@ impl Widget for LineBox {
 
         if self.selecting {
             if input.mouse_moved() {
-                let index = self.index_at_x(&graphics.font, input.mouse_pos.x);
+                let index = self.index_at_x(&mut graphics.font, input.mouse_pos.x);
                 self.move_cursor(index, true);
             }
             if input.mouse_left_release {
@@ -345,7 +345,7 @@ impl Widget for LineBox {
     }
 
     fn render(&mut self, graphics: &mut Graphics) {
-        self.scroll_to_cursor(&graphics.font);
+        self.scroll_to_cursor(&mut graphics.font);
         let rect = self.core.rect;
 
         // Shadow
@@ -394,9 +394,9 @@ impl Widget for LineBox {
         if start != end && self.core.focused() {
             graphics.painter.rectangle(
                 Rect::new(
-                    origin + self.char_offset(&graphics.font, start),
+                    origin + self.char_offset(&mut graphics.font, start),
                     y1,
-                    origin + self.char_offset(&graphics.font, end),
+                    origin + self.char_offset(&mut graphics.font, end),
                     y2,
                 ),
                 [THEME.active_color; 4],
@@ -415,7 +415,7 @@ impl Widget for LineBox {
 
         // Cursor
         if self.core.focused() {
-            let x = origin + self.char_offset(&graphics.font, self.cursor_end);
+            let x = origin + self.char_offset(&mut graphics.font, self.cursor_end);
             graphics.painter.rectangle(
                 Rect::new(x, y1, x + Self::CURSOR_WIDTH, y2),
                 [THEME.text_cursor_color; 4],

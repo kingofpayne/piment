@@ -46,15 +46,15 @@ impl<K: Ord, D, P: Pixel<Subpixel = u8>> Atlas<K, D, P> {
         self.glyphs.get(key)
     }
 
+    /// Returns the packed glyph for `key`, with only the glyph data being modifiable, or `None` if
+    /// it is not in the atlas.
+    pub(crate) fn glyph_mut(&mut self, key: &K) -> Option<GlyphRef<'_, D>> {
+        self.glyphs.get_mut(key).map(Glyph::as_ref_mut)
+    }
+
     /// Returns every glyph of the atlas, with only the glyph data being modifiable.
     pub(crate) fn glyphs_mut(&mut self) -> impl Iterator<Item = GlyphRef<'_, D>> {
-        self.glyphs.values_mut().map(|glyph| GlyphRef {
-            data: &mut glyph.data,
-            x: &glyph.x,
-            y: &glyph.y,
-            w: &glyph.w,
-            h: &glyph.h,
-        })
+        self.glyphs.values_mut().map(Glyph::as_ref_mut)
     }
 
     /// Returns the atlas image.
@@ -156,6 +156,19 @@ pub(crate) struct Glyph<D, P: Pixel<Subpixel = u8>> {
     image: ImageBuffer<P, Vec<u8>>,
 }
 
+impl<D, P: Pixel<Subpixel = u8>> Glyph<D, P> {
+    /// Returns a view of the glyph where only the extra data can be modified.
+    fn as_ref_mut(&mut self) -> GlyphRef<'_, D> {
+        GlyphRef {
+            data: &mut self.data,
+            x: &self.x,
+            y: &self.y,
+            w: &self.w,
+            h: &self.h,
+        }
+    }
+}
+
 /// Atlas glyph view where only the extra data can be modified.
 pub(crate) struct GlyphRef<'a, D> {
     /// Extra glyph data unrelated to glyph packing in the atlas.
@@ -216,6 +229,14 @@ where
     pub fn inner_mut(&mut self) -> &mut Atlas<K, D, P> {
         self.dirty = true;
         &mut self.inner
+    }
+
+    /// Returns the packed glyph for `key`, with only the glyph data being modifiable, or `None` if
+    /// it is not in the atlas.
+    /// As only the custom data can be modified, the atlas image is not impacted and therefore the
+    /// dirty flag remains untouched.
+    pub(crate) fn glyph_mut(&mut self, key: &K) -> Option<GlyphRef<'_, D>> {
+        self.inner.glyph_mut(key)
     }
 
     /// Returns every glyph of the atlas, with only the glyph data being modifiable.

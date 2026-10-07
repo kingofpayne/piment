@@ -45,7 +45,7 @@ impl Widget for Label {
 
     fn render(&mut self, graphics: &mut Graphics) {
         graphics.painter.text(
-            &graphics.font,
+            &mut graphics.font,
             &self.text,
             vec2(
                 self.core.rect.x1,

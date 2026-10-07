@@ -1,12 +1,12 @@
-use crate::{TextureAtlas, rect::Rect};
+use crate::{TextureAtlas, atlas::Glyph, rect::Rect};
 use font_kit::{
     family_name::FamilyName, handle::Handle, properties::Properties, source::SystemSource,
 };
 use glam::{Vec4, vec4};
-use image::{GrayImage, RgbaImage, imageops};
+use image::{GrayImage, Rgba, RgbaImage, imageops};
 use std::collections::BTreeMap;
 use swash::{
-    FontRef,
+    CacheKey, FontRef,
     scale::{Render, ScaleContext, Source, image::Image},
     zeno::{Cap, Format, Join, Stroke},
 };
@@ -31,13 +31,22 @@ const SHADOW_SIGMA_PER_SIZE: f32 = 1.0 / 11.0;
 const ATLAS_SIZE: u32 = 1024;
 
 pub struct Font {
+    /// Font file data, kept to rasterize glyphs on demand.
+    data: Vec<u8>,
+    /// Offset of the font table directory in `data`, see [FontRef::offset].
+    offset: u32,
+    /// Swash cache key identifying the font, see [FontRef::key].
+    key: CacheKey,
+    /// Rasterization context, reused across glyph renderings.
+    context: ScaleContext,
     /// Glyphs atlas
     atlas: TextureAtlas<FontGlyphKey, FontGlyph>,
     /// Character set ink extents for each built font size.
     metrics: BTreeMap<i32, Metrics>,
 }
 
-/// How far the ink of a rasterized character set reaches on both sides of the baseline, in pixels.
+/// How far the ink of a rasterized character, or character set, reaches on both sides of the
+/// baseline, in pixels.
 ///
 /// These are measured from the rendered glyphs rather than taken from the typographic metrics,
 /// because they are used to vertically center text in a rectangle.
@@ -49,104 +58,175 @@ struct Metrics {
 }
 
 impl Font {
-    /// Resolves a system sans-serif and builds the atlas at each of the requested `sizes`.
+    /// Resolves a system sans-serif font.
     ///
     /// Prefers DejaVu Sans when it is installed, then other common UI faces, then the platform
     /// generic sans-serif.
-    pub fn from_system(sizes: &[i32]) -> Self {
-        let (data, index) = system_font_data();
-        Self::from_data(&data, index, sizes)
-    }
-
-    /// Builds the atlas from font `data`, rasterizing every character of [CHARACTERS] at each of
-    /// the requested `sizes`.
     ///
-    /// Each character is rendered three times into its atlas tile: filled in the red channel,
-    /// stroked in the green channel, and filled then gaussian blurred in the blue channel, to be
-    /// used as a shadow. All renderings share the tile, so a character, its outline and its
-    /// shadow are painted with a single quad, picking a channel with the fragment shader.
-    pub fn from_bytes(data: Vec<u8>, sizes: &[i32]) -> Self {
-        Self::from_data(&data, 0, sizes)
+    /// See [Self::from_bytes] for how glyphs are rasterized.
+    pub fn from_system() -> Self {
+        let (data, index) = system_font_data();
+        Self::from_data(data, index)
     }
 
-    fn from_data(data: &[u8], index: u32, sizes: &[i32]) -> Self {
-        let font = FontRef::from_index(data, index as usize).expect("Failed to parse font file");
-        let charmap = font.charmap();
-        let mut context = ScaleContext::new();
-        let mut atlas = TextureAtlas::new(ATLAS_SIZE, ATLAS_SIZE);
-        let mut metrics_by_size = BTreeMap::new();
+    /// Loads a font from its file `data`, starting with an empty atlas.
+    ///
+    /// Characters are rasterized and added to the atlas the first time they are requested at a
+    /// given size.
+    pub fn from_bytes(data: Vec<u8>) -> Self {
+        Self::from_data(data, 0)
+    }
+
+    fn from_data(data: Vec<u8>, index: u32) -> Self {
+        let font = FontRef::from_index(&data, index as usize).expect("Failed to parse font file");
+        let (offset, key) = (font.offset, font.key);
+        Self {
+            data,
+            offset,
+            key,
+            context: ScaleContext::new(),
+            atlas: TextureAtlas::new(ATLAS_SIZE, ATLAS_SIZE),
+            metrics: BTreeMap::new(),
+        }
+    }
+
+    /// Rasterizes every character of [CHARACTERS] at the given font `size`, and records how far
+    /// their ink reaches on both sides of the baseline.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the atlas has no room left for the characters.
+    fn populate_size(&mut self, size: i32) {
+        let mut metrics = Metrics {
+            ascent: 0.0,
+            descent: 0.0,
+        };
+        for char in CHARACTERS.chars() {
+            if let Some(ink) = self.populate_glyph(char, size) {
+                metrics.ascent = metrics.ascent.max(ink.ascent);
+                metrics.descent = metrics.descent.max(ink.descent);
+            }
+        }
+        self.metrics.insert(size, metrics);
+    }
+
+    /// Rasterizes `char` at the given font `size` and inserts it in the atlas.
+    ///
+    /// The character is rendered three times into its atlas tile: filled in the red channel,
+    /// stroked in the green channel, and filled then gaussian blurred in the blue channel, to be
+    /// used as a shadow. All renderings share the tile, so a character, its outline and its shadow
+    /// are painted with a single quad, picking a channel with the fragment shader.
+    ///
+    /// Returns how far the ink of the plain character reaches, or `None` if nothing was rendered.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the atlas has no room left for the character.
+    fn populate_glyph(&mut self, char: char, size: i32) -> Option<Metrics> {
+        let font = FontRef {
+            data: &self.data,
+            offset: self.offset,
+            key: self.key,
+        };
+        let id = font.charmap().map(char);
+        let advance = font
+            .glyph_metrics(&[])
+            .scale(size as f32)
+            .advance_width(id)
+            .round() as i32;
+        let mut scaler = self
+            .context
+            .builder(font)
+            .size(size as f32)
+            .hint(true)
+            .build();
 
         // Round the stroke corners and ends, as the sharp spikes a miter join makes on the
         // tight angles of a character look like rendering glitches.
         let mut stroke = Stroke::new(OUTLINE_WIDTH);
         stroke.cap(Cap::Round).join(Join::Round);
 
-        for &scale in sizes {
-            let metrics = font.glyph_metrics(&[]).scale(scale as f32);
-            let mut scaler = context.builder(font).size(scale as f32).hint(true).build();
-            let sigma = SHADOW_SIGMA_PER_SIZE * scale as f32;
-            let mut ascent = 0;
-            let mut descent = 0;
+        let plain = Render::new(&[Source::Outline])
+            .format(Format::Alpha)
+            .render(&mut scaler, id);
+        let outline = Render::new(&[Source::Outline])
+            .format(Format::Alpha)
+            .style(stroke)
+            .render(&mut scaler, id);
 
-            for char in CHARACTERS.chars() {
-                let id = charmap.map(char);
-                let plain = Render::new(&[Source::Outline])
-                    .format(Format::Alpha)
-                    .render(&mut scaler, id);
-                let outline = Render::new(&[Source::Outline])
-                    .format(Format::Alpha)
-                    .style(stroke)
-                    .render(&mut scaler, id);
+        // The outline stroke bleeds outside of the character, so only the plain rendering tells
+        // how far the character really reaches. `placement.top` is the distance from the baseline
+        // up to the top of the mask, so what is left of its height falls below the baseline.
+        let ink = plain.as_ref().map(|image| Metrics {
+            ascent: image.placement.top as f32,
+            descent: (image.placement.height as i32 - image.placement.top) as f32,
+        });
 
-                // The outline stroke bleeds outside of the character, so only the plain rendering
-                // tells how far the characters really reach. `placement.top` is the distance from
-                // the baseline up to the top of the mask, so what is left of its height falls
-                // below the baseline.
-                if let Some(image) = plain.as_ref() {
-                    ascent = ascent.max(image.placement.top);
-                    descent = descent.max(image.placement.height as i32 - image.placement.top);
-                }
-
-                let (image, x, y) = tile(plain.as_ref(), outline.as_ref(), sigma);
-                atlas
-                    .inner_mut()
-                    .insert(
-                        FontGlyphKey { scale, char },
-                        image,
-                        FontGlyph {
-                            x,
-                            y,
-                            advance: metrics.advance_width(id).round() as i32,
-                            uv: Vec4::ZERO,
-                        },
-                    )
-                    .unwrap();
-            }
-
-            metrics_by_size.insert(
-                scale,
-                Metrics {
-                    ascent: ascent as f32,
-                    descent: descent as f32,
+        let sigma = SHADOW_SIGMA_PER_SIZE * size as f32;
+        let (image, x, y) = tile(plain.as_ref(), outline.as_ref(), sigma);
+        let key = FontGlyphKey { scale: size, char };
+        self.atlas
+            .inner_mut()
+            .insert(
+                key,
+                image,
+                FontGlyph {
+                    x,
+                    y,
+                    advance,
+                    uv: Vec4::ZERO,
                 },
-            );
-        }
+            )
+            .expect("Font atlas is full");
 
-        // Repacking changes glyph positions, so calculate texture coordinates afterwards.
-        let width = atlas.inner().width() as f32;
-        let height = atlas.inner().height() as f32;
-        for glyph in atlas.glyphs_mut() {
-            let u1 = *glyph.x as f32 / width;
-            let v1 = *glyph.y as f32 / height;
-            let u2 = u1 + *glyph.w as f32 / width;
-            let v2 = v1 + *glyph.h as f32 / height;
-            glyph.data.uv = vec4(u1, v1, u2, v2);
-        }
+        // The glyph position in the atlas is only known once inserted.
+        let width = self.atlas.inner().width() as f32;
+        let height = self.atlas.inner().height() as f32;
+        let glyph = self.atlas.glyph_mut(&key).unwrap();
+        let u1 = *glyph.x as f32 / width;
+        let v1 = *glyph.y as f32 / height;
+        let u2 = u1 + *glyph.w as f32 / width;
+        let v2 = v1 + *glyph.h as f32 / height;
+        glyph.data.uv = vec4(u1, v1, u2, v2);
 
-        Self {
-            atlas,
-            metrics: metrics_by_size,
+        ink
+    }
+
+    /// Returns the atlas glyph of `char` for the given font `size`, rasterizing it first if it is
+    /// missing.
+    ///
+    /// The first request for a size rasterizes the whole [CHARACTERS] set at that size, to measure
+    /// its ascent and descent.
+    ///
+    /// Returns `None` if the font has no glyph for `char`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the atlas has no room left for the rasterized glyphs.
+    pub(crate) fn glyph(&mut self, char: char, size: i32) -> Option<&Glyph<FontGlyph, Rgba<u8>>> {
+        self.metrics(size);
+        let key = FontGlyphKey { scale: size, char };
+        if self.atlas.inner().glyph(&key).is_none() {
+            let font = FontRef {
+                data: &self.data,
+                offset: self.offset,
+                key: self.key,
+            };
+            if font.charmap().map(char) == 0 {
+                return None;
+            }
+            self.populate_glyph(char, size);
         }
+        self.atlas.inner().glyph(&key)
+    }
+
+    /// Returns the character set ink extents for the given font `size`, rasterizing the
+    /// [CHARACTERS] set at that size first if it is missing.
+    fn metrics(&mut self, size: i32) -> &Metrics {
+        if !self.metrics.contains_key(&size) {
+            self.populate_size(size);
+        }
+        &self.metrics[&size]
     }
 
     pub fn update_texture(&mut self, device: &Device, queue: &Queue) {
@@ -159,24 +239,20 @@ impl Font {
     }
 
     /// Returns the tallest character ink above the baseline for the given font `size`.
-    pub fn ascent(&self, size: i32) -> f32 {
-        self.metrics.get(&size).map_or(0.0, |m| m.ascent)
+    pub fn ascent(&mut self, size: i32) -> f32 {
+        self.metrics(size).ascent
     }
 
     /// Returns the deepest character ink below the baseline for the given font `size`.
-    pub fn descent(&self, size: i32) -> f32 {
-        self.metrics.get(&size).map_or(0.0, |m| m.descent)
+    pub fn descent(&mut self, size: i32) -> f32 {
+        self.metrics(size).descent
     }
 
     /// Calculate the width of a string for the given font `size`.
-    pub fn text_width(&self, text: &str, size: i32) -> f32 {
+    pub fn text_width(&mut self, text: &str, size: i32) -> f32 {
         let mut x = 0.0;
         for char in text.chars() {
-            let Some(glyph) = self
-                .atlas
-                .inner()
-                .glyph(&FontGlyphKey { scale: size, char })
-            else {
+            let Some(glyph) = self.glyph(char, size) else {
                 continue;
             };
             x += glyph.data.advance as f32;
@@ -187,7 +263,7 @@ impl Font {
     /// Builds a [TextLayout] positioning each character of `text` in `rect`, for the given font
     /// `size`.
     pub fn layout(
-        &self,
+        &mut self,
         text: &str,
         rect: Rect,
         align: TextHorizontalAlign,
@@ -207,11 +283,7 @@ impl Font {
         let baseline = (rect.v_center() + (self.ascent(size) - self.descent(size)) / 2.0).round();
         let mut bounds = Rect::new(x, rect.y1, x, rect.y1);
         for char in text.chars() {
-            let Some(glyph) = self
-                .atlas
-                .inner()
-                .glyph(&FontGlyphKey { scale: size, char })
-            else {
+            let Some(glyph) = self.glyph(char, size) else {
                 continue;
             };
             // Some characters, such as " ", have no image.
@@ -338,7 +410,7 @@ fn tile(plain: Option<&Image>, outline: Option<&Image>, sigma: f32) -> (RgbaImag
 }
 
 /// Identifies a font character for a given font scale in the atlas.
-#[derive(PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 struct FontGlyphKey {
     /// Font size.
     scale: i32,

@@ -31,7 +31,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Font texture atlas refactoring.
+- Dynamic loading of missing bitmap font characters and sizes.
 - The text selection of a `LineBox` is only displayed while it has the focus.
 - `Numeric` follows its text box behavior: the edition ends when the text box loses the focus, and
   the typed value is committed only if the value has changed.

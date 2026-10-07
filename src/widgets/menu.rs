@@ -159,7 +159,7 @@ impl Widget for MenuItem {
             Axis::Y => 25.0,
         };
         graphics.painter.text(
-            &graphics.font,
+            &mut graphics.font,
             &self.label,
             self.core.rect + Rect::new(margin, 0.0, 0.0, 0.0),
             FontStyle::new(),
