@@ -481,17 +481,29 @@ impl Painter {
         self.font(&style.font).text_width(text, style.size)
     }
 
+    /// Builds a [TextLayout] positioning each character of `text` in `rect`, with the font and
+    /// size of `style`.
+    pub fn layout_text(
+        &mut self,
+        text: &str,
+        rect: Rect,
+        align: TextHorizontalAlign,
+        style: &FontStyle,
+    ) -> TextLayout {
+        self.font(&style.font).layout(text, rect, align, style.size)
+    }
+
     /// Paints `text` in `rect`, with the font of `style`. The text is vertically centered in
     /// `rect`, and horizontally placed according to `align`.
     pub fn text(&mut self, text: &str, rect: Rect, align: TextHorizontalAlign, style: &FontStyle) {
         if text.is_empty() {
             return;
         }
-        let layout = self.font(&style.font).layout(text, rect, align, style.size);
+        let layout = self.layout_text(text, rect, align, style);
         self.text_layout(&layout, style);
     }
 
-    /// Paints a [TextLayout] built by [Font::layout] with the font of `style`.
+    /// Paints a [TextLayout] built by [Self::layout_text] with the same `style` font.
     pub fn text_layout(&mut self, layout: &TextLayout, style: &FontStyle) {
         if layout.glyphs.is_empty() {
             return;

@@ -33,6 +33,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `Grid::remove`, `Grid::remove_row`, `Grid::remove_column`, `Grid::clear` and `Grid::resize` to
   edit a grid after its creation.
 - Animation support: `WidgetCore::request_animation_frame`, `Input::time` and `Input::time_delta`.
+- `Painter::layout_text` builds a `TextLayout` from a `FontStyle`.
 
 ### Changed
 
