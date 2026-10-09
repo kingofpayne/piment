@@ -97,7 +97,7 @@ impl<K: Ord, D, P: Pixel<Subpixel = u8>> Atlas<K, D, P> {
                     y: 0,
                     w: 0,
                     h: 0,
-                    image,
+                    _image: image,
                 },
             );
             return Ok(());
@@ -127,7 +127,7 @@ impl<K: Ord, D, P: Pixel<Subpixel = u8>> Atlas<K, D, P> {
                 y: y as i32,
                 w: w as i32,
                 h: h as i32,
-                image,
+                _image: image,
             },
         );
 
@@ -153,7 +153,7 @@ pub(crate) struct Glyph<D, P: Pixel<Subpixel = u8>> {
     pub(crate) h: i32,
     /// Picture.
     /// Kept aside so the atlas can dynamically repack its glyphs.
-    image: ImageBuffer<P, Vec<u8>>,
+    _image: ImageBuffer<P, Vec<u8>>,
 }
 
 impl<D, P: Pixel<Subpixel = u8>> Glyph<D, P> {
@@ -237,13 +237,6 @@ where
     /// dirty flag remains untouched.
     pub(crate) fn glyph_mut(&mut self, key: &K) -> Option<GlyphRef<'_, D>> {
         self.inner.glyph_mut(key)
-    }
-
-    /// Returns every glyph of the atlas, with only the glyph data being modifiable.
-    /// As only the custom data can be modified, the atlas image is not impacted and therefore the
-    /// dirty flag remains untouched.
-    pub(crate) fn glyphs_mut(&mut self) -> impl Iterator<Item = GlyphRef<'_, D>> {
-        self.inner.glyphs_mut()
     }
 
     /// Ensure the texture is up-to-date after glyphs atlas modification.
