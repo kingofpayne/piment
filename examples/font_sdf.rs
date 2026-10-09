@@ -72,7 +72,7 @@ impl Widget for Samples {
         for style in self.styles.iter() {
             let height = Self::row_height(style);
             let rect = Rect::new(self.core.rect.x1, y, self.core.rect.x2, y + height);
-            graphics.painter.text_sdf(&self.font, TEXT, rect, *style);
+            graphics.painter.text_sdf(&self.font, TEXT, rect, style);
             y += height;
         }
     }

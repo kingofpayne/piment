@@ -1,12 +1,12 @@
 use crate::{
     axis::Axis,
     color::Color,
+    font::TextHorizontalAlign,
     graphics::Graphics,
     impl_widget_core,
     input::Input,
     painter::FontStyle,
     rect::Rect,
-    theme::THEME,
     widgets::{CheckBox, Layout, Share, Shared, Widget, WidgetCore},
 };
 use glam::{Vec2, Vec4, vec2};
@@ -109,7 +109,7 @@ impl Widget for MenuItem {
             Axis::Y => 30.0,
         };
         vec2(
-            graphics.font.text_width(&self.label, THEME.font_size) + margin,
+            graphics.painter.text_width(&self.label, &FontStyle::new()) + margin,
             20.0,
         )
     }
@@ -159,10 +159,10 @@ impl Widget for MenuItem {
             Axis::Y => 25.0,
         };
         graphics.painter.text(
-            &mut graphics.font,
             &self.label,
             self.core.rect + Rect::new(margin, 0.0, 0.0, 0.0),
-            FontStyle::new(),
+            TextHorizontalAlign::Left,
+            &FontStyle::new(),
         );
     }
 }

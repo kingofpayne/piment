@@ -25,7 +25,6 @@ pub struct Graphics {
     pub texture_depth: Texture,
     pub painter: Painter,
     pub textures: TextureManager,
-    pub font: Font,
     /// Sends custom event to winit main event loop.
     /// Can be used by threads to wake-up and notify main loop.
     pub proxy: EventLoopProxy<CustomEvent>,
@@ -72,14 +71,14 @@ impl Graphics {
         };
         surface.configure(&device, &surface_config);
 
-        let mut font = Font::from_system();
-        font.update_texture(&device, &queue);
-
-        let painter = Painter::new(
+        let mut painter = Painter::new(
             &device,
             surface_config.view_formats[0],
             uvec2(size.width, size.height),
         );
+        let mut font = Font::from_system();
+        font.update_texture(&device, &queue);
+        painter.fonts.insert("main".into(), font);
 
         let texture_depth = create_depth_texture(&device, size);
 
@@ -94,7 +93,6 @@ impl Graphics {
             texture_depth,
             painter,
             textures: TextureManager::new(device, queue, images),
-            font,
             proxy,
         }
     }

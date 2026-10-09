@@ -6,7 +6,6 @@ use crate::{
     input::Input,
     painter::{FontStyle, Stroke},
     rect::Rect,
-    theme::THEME,
     widgets::{SharedWidget, Widget, WidgetCore},
 };
 use glam::{Vec2, Vec4, vec2};
@@ -119,7 +118,7 @@ impl Widget for CollapsiblePanel {
 
     fn minimum_size(&mut self, graphics: &mut Graphics) -> Vec2 {
         let title_width = Self::TEXT_OFFSET
-            + graphics.font.text_width(&self.title, THEME.font_size)
+            + graphics.painter.text_width(&self.title, &FontStyle::new())
             + Self::PADDING;
         let mut size = vec2(title_width, Self::HEADER_HEIGHT);
         if self.expanded
@@ -186,12 +185,11 @@ impl Widget for CollapsiblePanel {
             .color(Color::WHITE)
             .shadow_color(Color::new_rgba(0.0, 0.0, 0.0, 0.5))
             .shadow_offset(vec2(0.0, 1.0));
-        let layout = graphics.font.layout(
+        graphics.painter.text(
             &self.title,
             header + Rect::new(Self::TEXT_OFFSET, 0.0, 0.0, 0.0),
             TextHorizontalAlign::Left,
-            style.size,
+            &style,
         );
-        graphics.painter.text_layout(&graphics.font, &layout, style);
     }
 }

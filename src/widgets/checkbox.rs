@@ -101,14 +101,12 @@ impl Widget for CheckBox {
             );
         }
         if !self.label.is_empty() {
-            let style = FontStyle::new();
-            let layout = graphics.font.layout(
+            graphics.painter.text(
                 &self.label,
                 self.core.rect + Rect::new(box_size + 4.0, 0.0, 0.0, 0.0),
                 TextHorizontalAlign::Left,
-                style.size,
+                &FontStyle::new(),
             );
-            graphics.painter.text_layout(&graphics.font, &layout, style);
         }
     }
 }

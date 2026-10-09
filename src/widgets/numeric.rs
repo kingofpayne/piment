@@ -398,12 +398,11 @@ impl Widget for Numeric {
             .color(Color::WHITE)
             .shadow_color(Color::new_rgba(0.0, 0.0, 0.0, 0.5))
             .shadow_offset(vec2(0.0, 1.0));
-        let layout = graphics.font.layout(
+        graphics.painter.text(
             &self.value.to_string(),
             rect + Rect::new(Self::ARROW_WIDTH, 0.0, -Self::ARROW_WIDTH, 0.0),
             TextHorizontalAlign::Center,
-            style.size,
+            &style,
         );
-        graphics.painter.text_layout(&graphics.font, &layout, style);
     }
 }

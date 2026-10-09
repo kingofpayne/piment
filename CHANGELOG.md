@@ -14,6 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `color` and `vertex` modules are now private: `Color` and `Vertex` are re-exported at the
   crate root as `piment::Color` and `piment::Vertex`.
 - `widgets::Root` is no longer public.
+- `Graphics::font` has been replaced by `Painter::fonts`, which stores fonts by name. The system
+  font is registered as `"main"`, which the piment widgets require.
+- `Painter` text drawing methods take the font to be used from an identified in `FontStyle`.
+- `FontStyle` is no longer `Copy`, and `Painter::text` and `Painter::text_layout` take it by
+  reference.
 
 ### Added
 

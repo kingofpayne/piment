@@ -1,10 +1,10 @@
 use crate::{
     color::Color,
-    font::{Font, TextHorizontalAlign},
+    font::TextHorizontalAlign,
     graphics::Graphics,
     impl_widget_core,
     input::Input,
-    painter::FontStyle,
+    painter::{FontStyle, Painter},
     rect::{IRect, Rect},
     theme::THEME,
     widgets::{Widget, WidgetCore},
@@ -147,20 +147,26 @@ impl LineBox {
         (self.text_rect().x1 - self.scroll).round()
     }
 
+    /// Text style, shared by measuring and painting.
+    fn style() -> FontStyle {
+        FontStyle::new().color(Color::WHITE)
+    }
+
     /// Returns the distance in pixels between the beginning of the text and the character at
     /// `index`.
-    fn char_offset(&self, font: &mut Font, index: usize) -> f32 {
-        font.text_width(&self.text[..self.byte_index(index)], THEME.font_size)
+    fn char_offset(&self, painter: &mut Painter, index: usize) -> f32 {
+        painter.text_width(&self.text[..self.byte_index(index)], &Self::style())
     }
 
     /// Returns the index of the character boundary which is the closest to the window abscissa
     /// `x`.
-    fn index_at_x(&self, font: &mut Font, x: f32) -> usize {
+    fn index_at_x(&self, painter: &mut Painter, x: f32) -> usize {
         let x = x - self.text_origin();
+        let style = Self::style();
         let mut offset = 0.0;
         let mut buffer = [0u8; 4];
         for (index, char) in self.text.chars().enumerate() {
-            let advance = font.text_width(char.encode_utf8(&mut buffer), THEME.font_size);
+            let advance = painter.text_width(char.encode_utf8(&mut buffer), &style);
             if x < offset + advance / 2.0 {
                 return index;
             }
@@ -170,15 +176,15 @@ impl LineBox {
     }
 
     /// Updates [Self::scroll] to keep the cursor visible in the widget.
-    fn scroll_to_cursor(&mut self, font: &mut Font) {
+    fn scroll_to_cursor(&mut self, painter: &mut Painter) {
         let width = self.text_rect().width();
         // Don't leave a gap on the right when the text has been shortened.
-        let text_width = font.text_width(&self.text, THEME.font_size);
+        let text_width = painter.text_width(&self.text, &Self::style());
         self.scroll = self
             .scroll
             .min(text_width + Self::CURSOR_WIDTH - width)
             .max(0.0);
-        let cursor = self.char_offset(font, self.cursor_end);
+        let cursor = self.char_offset(painter, self.cursor_end);
         if cursor < self.scroll {
             self.scroll = cursor;
         } else if cursor + Self::CURSOR_WIDTH - self.scroll > width {
@@ -317,7 +323,7 @@ impl Widget for LineBox {
             if input.hit && self.core.hover {
                 self.select_all_on_release = !self.core.focused();
                 self.core.request_focus();
-                let index = self.index_at_x(&mut graphics.font, input.mouse_pos.x);
+                let index = self.index_at_x(&mut graphics.painter, input.mouse_pos.x);
                 self.move_cursor(index, input.shift_key_down());
                 self.selecting = true;
             } else if self.core.focused() {
@@ -327,7 +333,7 @@ impl Widget for LineBox {
 
         if self.selecting {
             if input.mouse_moved() {
-                let index = self.index_at_x(&mut graphics.font, input.mouse_pos.x);
+                let index = self.index_at_x(&mut graphics.painter, input.mouse_pos.x);
                 self.move_cursor(index, true);
             }
             if input.mouse_left_release {
@@ -345,7 +351,7 @@ impl Widget for LineBox {
     }
 
     fn render(&mut self, graphics: &mut Graphics) {
-        self.scroll_to_cursor(&mut graphics.font);
+        self.scroll_to_cursor(&mut graphics.painter);
         let rect = self.core.rect;
 
         // Shadow
@@ -392,30 +398,24 @@ impl Widget for LineBox {
         // Selection
         let (start, end) = self.selection();
         if start != end && self.core.focused() {
-            graphics.painter.rectangle(
-                Rect::new(
-                    origin + self.char_offset(&mut graphics.font, start),
-                    y1,
-                    origin + self.char_offset(&mut graphics.font, end),
-                    y2,
-                ),
-                [THEME.active_color; 4],
-            );
+            let x1 = origin + self.char_offset(&mut graphics.painter, start);
+            let x2 = origin + self.char_offset(&mut graphics.painter, end);
+            graphics
+                .painter
+                .rectangle(Rect::new(x1, y1, x2, y2), [THEME.active_color; 4]);
         }
 
         // Text
-        let style = FontStyle::new().color(Color::WHITE);
-        let layout = graphics.font.layout(
+        graphics.painter.text(
             &self.text,
             text_rect + vec2(-self.scroll, 0.0),
             TextHorizontalAlign::Left,
-            style.size,
+            &Self::style(),
         );
-        graphics.painter.text_layout(&graphics.font, &layout, style);
 
         // Cursor
         if self.core.focused() {
-            let x = origin + self.char_offset(&mut graphics.font, self.cursor_end);
+            let x = origin + self.char_offset(&mut graphics.painter, self.cursor_end);
             graphics.painter.rectangle(
                 Rect::new(x, y1, x + Self::CURSOR_WIDTH, y2),
                 [THEME.text_cursor_color; 4],

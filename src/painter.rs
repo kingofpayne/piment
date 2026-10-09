@@ -67,6 +67,12 @@ pub struct Painter {
     pub projection_matrix: Mat4,
     /// All new drawing operations are clipped using this region rect.
     pub scissor: IRect,
+    /// Loaded fonts that can be used by widgets for rendering.
+    /// Fonts are identified by string keys, referenced by [FontStyle::font].
+    /// Widgets of the piment library requires the font "main" to be present. This font is populated
+    /// automatically.
+    /// More fonts may be added for custom widgets.
+    pub fonts: BTreeMap<String, Font>,
 }
 
 impl Painter {
@@ -95,6 +101,7 @@ impl Painter {
             size,
             projection_matrix: Mat4::IDENTITY,
             scissor: IRect::new(0, 0, i32::MAX, i32::MAX),
+            fonts: BTreeMap::new(),
         }
     }
 
@@ -120,6 +127,12 @@ impl Painter {
     pub fn prepare_render(&mut self, queue: &Queue) {
         // Finish pending chunk
         self.commit();
+        // Font glyphs may be created on the fly during widgets rendering.
+        // The atlas keeps a dirty flag and need to update the texture to the GPU when the image has
+        // been modified.
+        for font in self.fonts.values_mut() {
+            font.update_texture(&self.device, queue);
+        }
         self.vertex_buffer
             .write_slice(&self.device, queue, &self.vertices);
         self.index_buffer
@@ -452,23 +465,43 @@ impl Painter {
         }
     }
 
-    pub fn text(&mut self, font: &mut Font, text: &str, rect: Rect, style: FontStyle) {
+    /// Returns the font registered in [Self::fonts] under `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no such font.
+    pub fn font(&mut self, name: &str) -> &mut Font {
+        self.fonts
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("Font \"{name}\" is not loaded"))
+    }
+
+    /// Calculates the width of `text` painted with the font and size of `style`.
+    pub fn text_width(&mut self, text: &str, style: &FontStyle) -> f32 {
+        self.font(&style.font).text_width(text, style.size)
+    }
+
+    /// Paints `text` in `rect`, with the font of `style`. The text is vertically centered in
+    /// `rect`, and horizontally placed according to `align`.
+    pub fn text(&mut self, text: &str, rect: Rect, align: TextHorizontalAlign, style: &FontStyle) {
         if text.is_empty() {
             return;
         }
-        let layout = font.layout(text, rect, TextHorizontalAlign::Left, style.size);
-        self.text_layout(font, &layout, style);
+        let layout = self.font(&style.font).layout(text, rect, align, style.size);
+        self.text_layout(&layout, style);
     }
 
-    pub fn text_layout(&mut self, font: &Font, layout: &TextLayout, style: FontStyle) {
+    /// Paints a [TextLayout] built by [Font::layout] with the font of `style`.
+    pub fn text_layout(&mut self, layout: &TextLayout, style: &FontStyle) {
         if layout.glyphs.is_empty() {
             return;
         }
+        let texture = self.font(&style.font).texture().unwrap().clone();
         self.begin(
             ChunkConfig::default()
                 .shader(BuiltinShader::Font)
                 .blend(Blend::Alpha)
-                .with_texture(font.texture().unwrap().clone()),
+                .with_texture(texture),
         );
         // Shadows, outlines and characters overlap between neighbouring glyphs, so each is drawn
         // in its own pass, back to front.
@@ -522,7 +555,7 @@ impl Painter {
 
     /// Paints `text` in `rect` with a distance field font, which can be drawn at any
     /// [FontStyle::size].
-    pub fn text_sdf(&mut self, font: &FontSdf, text: &str, rect: Rect, style: FontStyle) {
+    pub fn text_sdf(&mut self, font: &FontSdf, text: &str, rect: Rect, style: &FontStyle) {
         if text.is_empty() {
             return;
         }
@@ -531,7 +564,7 @@ impl Painter {
     }
 
     /// Paints a [TextLayout] built by [FontSdf::layout].
-    pub fn text_layout_sdf(&mut self, font: &FontSdf, layout: &TextLayout, style: FontStyle) {
+    pub fn text_layout_sdf(&mut self, font: &FontSdf, layout: &TextLayout, style: &FontStyle) {
         if layout.glyphs.is_empty() {
             return;
         }
@@ -974,8 +1007,12 @@ impl Stroke {
 /// Default text size, in pixels.
 pub const DEFAULT_FONT_SIZE: i32 = 11;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct FontStyle {
+    /// Font identifier, as stored in [Painter::fonts].
+    /// By default "main" to use the main font.
+    pub font: String,
+    /// Text color.
     pub color: Color,
     /// Outline drawing color. Default is transparent.
     pub outline_color: Color,
@@ -991,12 +1028,19 @@ pub struct FontStyle {
 impl FontStyle {
     pub fn new() -> Self {
         Self {
+            font: "main".into(),
             color: Color::WHITE,
             outline_color: Color::BLACK_TRANSPARENT,
             shadow_color: Color::BLACK_TRANSPARENT,
             shadow_offset: Vec2::ZERO,
             size: DEFAULT_FONT_SIZE,
         }
+    }
+
+    /// Sets the font identifier, as stored in [Painter::fonts].
+    pub fn font(mut self, name: impl Into<String>) -> Self {
+        self.font = name.into();
+        self
     }
 
     pub fn color(mut self, color: Color) -> Self {

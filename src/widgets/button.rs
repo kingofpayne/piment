@@ -33,6 +33,14 @@ impl Button {
             on_click: false,
         }
     }
+
+    /// Text style, shared by measuring and painting.
+    fn style() -> FontStyle {
+        FontStyle::new()
+            .color(Color::WHITE)
+            .shadow_color(Color::new_rgba(0.0, 0.0, 0.0, 0.5))
+            .shadow_offset(vec2(0.0, 1.0))
+    }
 }
 
 impl Widget for Button {
@@ -40,7 +48,7 @@ impl Widget for Button {
 
     fn minimum_size(&mut self, graphics: &mut Graphics) -> glam::Vec2 {
         vec2(
-            graphics.font.text_width(&self.text, THEME.font_size) + Self::PADDING * 2.0,
+            graphics.painter.text_width(&self.text, &Self::style()) + Self::PADDING * 2.0,
             21.0,
         )
     }
@@ -98,14 +106,11 @@ impl Widget for Button {
         // Text
         // Note that the text is vertically centered with inclusion of the shadow, so if a label is
         // aside a button, the text baseline will be the same.
-        let style = FontStyle::new()
-            .color(Color::WHITE)
-            .shadow_color(Color::new_rgba(0.0, 0.0, 0.0, 0.5))
-            .shadow_offset(vec2(0.0, 1.0));
-        let layout =
-            graphics
-                .font
-                .layout(&self.text, rect, TextHorizontalAlign::Center, style.size);
-        graphics.painter.text_layout(&graphics.font, &layout, style);
+        graphics.painter.text(
+            &self.text,
+            rect,
+            TextHorizontalAlign::Center,
+            &Self::style(),
+        );
     }
 }

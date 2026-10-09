@@ -1,6 +1,7 @@
 use glam::{Vec2, vec2};
 
 use crate::{
+    font::TextHorizontalAlign,
     graphics::Graphics,
     impl_widget_core,
     painter::FontStyle,
@@ -40,19 +41,19 @@ impl Widget for Label {
     impl_widget_core!();
 
     fn minimum_size(&mut self, graphics: &mut Graphics) -> Vec2 {
-        vec2(graphics.font.text_width(&self.text, self.style.size), 20.0)
+        vec2(graphics.painter.text_width(&self.text, &self.style), 20.0)
     }
 
     fn render(&mut self, graphics: &mut Graphics) {
         graphics.painter.text(
-            &mut graphics.font,
             &self.text,
             vec2(
                 self.core.rect.x1,
                 self.core.rect.y1.midpoint(self.core.rect.y2),
             )
             .into(),
-            self.style,
+            TextHorizontalAlign::Left,
+            &self.style,
         );
     }
 }
