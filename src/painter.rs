@@ -7,6 +7,7 @@ use crate::font_sdf::{FontSdf, OUTLINE_WIDTH, SHADOW_SIGMA_PER_SIZE, SPREAD};
 use crate::rect::IRect;
 use crate::rect::Rect;
 use crate::vertex::Vertex;
+use glam::vec2;
 use glam::{Mat4, UVec2, Vec2, Vec4, vec4};
 use std::{borrow::Cow, collections::BTreeMap, ops::Range, path::PathBuf};
 use wgpu::{
@@ -346,6 +347,44 @@ impl Painter {
         );
     }
 
+    /// Draws a line from `a` to `b`.
+    pub fn line(&mut self, a: Vec2, b: Vec2, stroke: Stroke) {
+        // Rendering uses the round rectangle SDF method of the shader.
+        // We use geom1 to indicate the coordinates of the vertices in the rectangle space.
+        // The rectangle won't fill the quad, we have a margin to be able to have antialiased edges.
+        self.begin(
+            ChunkConfig::default()
+                .shader(BuiltinShader::Line)
+                .blend(Blend::Alpha)
+                .fragment_settings(vec4(3.0, 0.0, 0.0, 0.0)),
+        );
+        //  +------------------+
+        //  |   a          b   |
+        //  |   .--> u     .   |
+        //  |   |              |
+        //  |   v v            |
+        //  +------------------+
+        let w = stroke.width;
+        let m = 10.0; // margin
+        let u = (b - a).try_normalize().unwrap_or(vec2(1.0, 0.0)) * (w / 2.0 + m);
+        let v = u.perp();
+        let l = (b - a).length();
+        let dx = l / 2.0 + w / 2.0 + m;
+        let dy = w / 2.0 + m;
+
+        let vertex = Vertex::new()
+            .color1(stroke.color)
+            .geom2_vec(Vec4::splat(stroke.width / 2.0))
+            .geom3_vec(Vec4::splat(-1.0));
+
+        self.quad(
+            vertex.xy(a - u - v).geom1(-dx, dy, l + w, w),
+            vertex.xy(a - u + v).geom1(-dx, -dy, l + w, w),
+            vertex.xy(b + u + v).geom1(dx, -dy, l + w, w),
+            vertex.xy(b + u - v).geom1(dx, dy, l + w, w),
+        );
+    }
+
     pub fn round_rectangle_texture(
         &mut self,
         rect: Rect,
@@ -419,40 +458,12 @@ impl Painter {
         );
     }
 
-    /// Paints a segment without end caps.
-    pub fn segment_no_cap(&mut self, a: Vec2, b: Vec2, stroke: Stroke) {
-        if a == b {
-            return;
-        }
-        self.begin(
-            ChunkConfig::default()
-                .shader(BuiltinShader::Line)
-                .blend(Blend::Alpha),
-        );
-        let w = stroke.width + 1.0;
-        let u = (b - a).perp().normalize() * w * 0.5;
-        self.quad(
-            Vertex::from_vec(a + u)
-                .geom1(w, 0.0, 0.0, 0.0)
-                .color1(stroke.color),
-            Vertex::from_vec(a - u)
-                .geom1(0.0, w, 0.0, 0.0)
-                .color1(stroke.color),
-            Vertex::from_vec(b - u)
-                .geom1(0.0, w, 0.0, 0.0)
-                .color1(stroke.color),
-            Vertex::from_vec(b + u)
-                .geom1(w, 0.0, 0.0, 0.0)
-                .color1(stroke.color),
-        );
-    }
-
     pub fn polyline(&mut self, points: &[Vec2], stroke: Stroke) {
         let size = points.len();
         for i in 0..size - 1 {
             let a = points[i];
             let b = points[(i + 1) % size];
-            self.segment_no_cap(a, b, stroke);
+            self.line(a, b, stroke);
         }
     }
 
@@ -461,7 +472,7 @@ impl Painter {
         for i in 0..size {
             let a = points[i];
             let b = points[(i + 1) % size];
-            self.segment_no_cap(a, b, stroke);
+            self.line(a, b, stroke);
         }
     }
 

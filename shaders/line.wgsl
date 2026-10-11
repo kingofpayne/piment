@@ -62,6 +62,24 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
         let d1 = 1.0 - smoothstep(rad1, rad1 + 1.0, k);
         let d2 = smoothstep(rad2, rad2 + 1.0, k);
         d = d2 * d1;
+    } else if shape == 3.0 {
+        // Round rectangle SDF. Also used to draw lines.
+        // Coordinates: geom1.xy
+        // Rectangle size: geom1.zw
+        // Outer radius: geom2
+        // Inner radius: geom3
+        // First select radius depending on which corner we are.
+        let rad1h = select(vertex.geom2.xy, vertex.geom2.wz, vertex.geom1.x > 0);
+        let rad1 = select(rad1h.x, rad1h.y, vertex.geom1.y > 0);
+        let rad2h = select(vertex.geom3.xy, vertex.geom3.wz, vertex.geom1.x > 0);
+        let rad2 = select(rad2h.x, rad2h.y, vertex.geom1.y > 0);
+        // Now calculate the SDF for both outer and inner radius
+        let size = vertex.geom1.zw * 0.5 - vec2f(rad1, rad1) - vec2f(0.5, 0.5);
+        let k = length(max(vec2f(0, 0), abs(vertex.geom1.xy) - size));
+        let d1 = 1.0 - smoothstep(rad1, rad1 + 1.0, k);
+        let d2 = smoothstep(rad2, rad2 + 1.0, k);
+        //d = 1.0 - (abs(vertex.geom1.y) - size.y * 0.5);
+        d = d1;
     } else {
         d = 0.5;
     }

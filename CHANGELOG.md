@@ -19,6 +19,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `Painter` text drawing methods take the font to be used from an identified in `FontStyle`.
 - `FontStyle` is no longer `Copy`, and `Painter::text` and `Painter::text_layout` take it by
   reference.
+- `Painter::segment_no_cap` replaced by `Painter::line`.
 
 ### Added
 
@@ -34,6 +35,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   edit a grid after its creation.
 - Animation support: `WidgetCore::request_animation_frame`, `Input::time` and `Input::time_delta`.
 - `Painter::layout_text` builds a `TextLayout` from a `FontStyle`.
+- Improved line drawing: now with round caps.
 
 ### Changed
 

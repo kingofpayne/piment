@@ -24,6 +24,18 @@ pub struct Vertex {
 }
 
 impl Vertex {
+    pub fn new() -> Self {
+        Self {
+            xyz: [0.0, 0.0, 0.0],
+            uv: [0.0, 0.0],
+            rgba1: [0.0, 0.0, 0.0, 1.0],
+            rgba2: [0.0, 0.0, 0.0, 1.0],
+            geom1: [0.0; 4],
+            geom2: [0.0; 4],
+            geom3: [0.0; 4],
+        }
+    }
+
     /// Creates a new [`Vertex`] with given X and Y coordinates. Z coordinate is set to 0.0.
     pub fn from_xy(x: f32, y: f32) -> Self {
         Self {
@@ -61,6 +73,13 @@ impl Vertex {
             geom2: [0.0; 4],
             geom3: [0.0; 4],
         }
+    }
+
+    /// Builds X and Y coordinates.
+    pub fn xy(mut self, xy: Vec2) -> Self {
+        self.xyz[0] = xy.x;
+        self.xyz[1] = xy.y;
+        self
     }
 
     /// Builds Z coordinate.
