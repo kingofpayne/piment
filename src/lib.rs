@@ -1,9 +1,7 @@
 use crate::{
-    event::CustomEvent,
     graphics::Graphics,
     image_cache::ImageCache,
     input::Input,
-    rect::Rect,
     widgets::{Root, SharedWidget},
 };
 use glam::camera::lh::proj::directx::orthographic;
@@ -24,24 +22,28 @@ mod atlas;
 pub mod axis;
 pub mod buffer;
 mod color;
-pub mod event;
+mod event;
 pub mod font;
 pub mod font_sdf;
 pub mod graphics;
 pub mod image_cache;
 pub mod input;
 pub mod painter;
-pub mod quad;
-pub mod rect;
+mod quad;
+mod rect;
 pub mod texture_manager;
 pub mod theme;
-pub mod uid;
+mod uid;
 mod util;
 mod vertex;
 pub mod widgets;
 
 pub use atlas::{Atlas, TextureAtlas};
 pub use color::Color;
+pub use event::CustomEvent;
+pub use quad::{DQuad, Quad};
+pub use rect::{DRect, IRect, Rect};
+pub use uid::Uid;
 pub use vertex::Vertex;
 
 /// Context for running a widget as an application.

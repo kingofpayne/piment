@@ -3,12 +3,11 @@
 
 use glam::{Vec2, vec2};
 use piment::{
-    App, Color,
+    App, Color, Rect,
     font_sdf::FontSdf,
     graphics::Graphics,
     impl_widget_core,
     painter::FontStyle,
-    rect::Rect,
     widgets::{Panel, Share, Shared, Widget, WidgetCore},
 };
 
