@@ -155,3 +155,9 @@ impl Vertex {
         self
     }
 }
+
+impl Default for Vertex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
