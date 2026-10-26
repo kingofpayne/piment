@@ -31,6 +31,9 @@ use wgpu::{
 /// shaders, the rendered shapes have antialiasing.
 ///
 /// Shapes to be rendered are accumulated in buffers, and sent to the GPU at the end.
+///
+/// The [Painter] tries to group render calls when rendered geometries share the same pipeline
+/// configuration and resources.
 pub struct Painter {
     /// WGPU Device. Required to create new pipelines on the fly.
     device: Device,
@@ -68,7 +71,7 @@ pub struct Painter {
     pub projection_matrix: Mat4,
     /// All new drawing operations are clipped using this region rect.
     pub scissor: IRect,
-    /// Loaded fonts that can be used by widgets for rendering.
+    /// Loaded fonts that can be used for rendering text.
     /// Fonts are identified by string keys, referenced by [FontStyle::font].
     /// Widgets of the piment library requires the font "main" to be present. This font is populated
     /// automatically.
@@ -80,7 +83,7 @@ impl Painter {
     const INITIAL_VERTEX_BUFFER_SIZE: u64 = 1024 * size_of::<Vertex>() as u64;
     const INITIAL_INDEX_BUFFER_SIZE: u64 = 1024 * size_of::<u32>() as u64;
 
-    pub fn new(device: &Device, target_texture_format: TextureFormat, size: UVec2) -> Self {
+    pub(crate) fn new(device: &Device, target_texture_format: TextureFormat, size: UVec2) -> Self {
         Self {
             device: device.clone(),
             target_texture_format,
@@ -117,6 +120,10 @@ impl Painter {
         self.chunk.indices_range = start..start;
     }
 
+    /// Begins a new rendering job using the given `config` settings.
+    ///
+    /// If `config` is identical to the previously used settings, the rendering operation is merged
+    /// with the previous one for optimization purpose.
     pub fn begin(&mut self, mut config: ChunkConfig) {
         config.scissor = config.scissor.intersection(self.scissor);
         if config != self.chunk.config {
@@ -125,7 +132,8 @@ impl Painter {
         }
     }
 
-    pub fn prepare_render(&mut self, queue: &Queue) {
+    /// Commits pending chunks, update textures and push rendering primitives to the GPU.
+    pub(crate) fn prepare_render(&mut self, queue: &Queue) {
         // Finish pending chunk
         self.commit();
         // Font glyphs may be created on the fly during widgets rendering.
@@ -141,7 +149,7 @@ impl Painter {
     }
 
     /// Renders all stored chunks, and clear them.
-    pub fn render(&mut self, pass: &mut RenderPass) {
+    pub(crate) fn render(&mut self, pass: &mut RenderPass) {
         // Create missing pipelines.
         // We can't do it in render_chunk because of the borrowing rules.
         for chunk in self.chunks.iter() {
@@ -347,11 +355,12 @@ impl Painter {
         );
     }
 
-    /// Draws a line from `a` to `b`.
+    /// Draws an antialiased line from `a` to `b` using `stroke` style.
     pub fn line(&mut self, a: Vec2, b: Vec2, stroke: Stroke) {
         // Rendering uses the round rectangle SDF method of the shader.
         // We use geom1 to indicate the coordinates of the vertices in the rectangle space.
         // The rectangle won't fill the quad, we have a margin to be able to have antialiased edges.
+        // The quad is tilted the same angle as the line.
         self.begin(
             ChunkConfig::default()
                 .shader(BuiltinShader::Line)
@@ -1007,17 +1016,27 @@ impl RenderResources {
     }
 }
 
+/// Possible color blending operators.
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Blend {
     #[default]
+    /// No blending: the resulting color is the shader output color.
     None,
+    /// Alpha blending: the resulting color is a linear interpolation between the current buffer
+    /// pixel color and the shader output color. The interpolation factor is the alpha channel of
+    /// the shader output color.
     Alpha,
+    /// Additive blending: the resulting color is the current buffer pixel color sumed with the
+    /// shader output color.
     Additive,
 }
 
+/// Line stroke style.
 #[derive(Copy, Clone)]
 pub struct Stroke {
+    /// Pencil color, including alpha channel for transparency if alpha blending is enabled.
     pub color: Color,
+    /// Pencil width, in pixels.
     pub width: f32,
 }
 
