@@ -5,14 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-26
 
 ### Breaking changes
 
 - `LineBox::on_submit` is now raised when the enter key is pressed or when the focus is lost, and
   only if the text has changed since the edition started.
-- The `color` and `vertex` modules are now private: `Color` and `Vertex` are re-exported at the
-  crate root as `piment::Color` and `piment::Vertex`.
+- The `color`, `event`, `quad`, `rect`, `uid` and `vertex` modules are now private: `Color`,
+  `CustomEvent`, `Quad`, `DQuad`, `Rect`, `DRect`, `IRect`, `Uid` and `Vertex` are re-exported at
+  the crate root.
+- `font::Atlas` moved to `piment::Atlas`. `Atlas::rebuild` has been removed: `Atlas::insert` now
+  packs the glyph immediately and returns an error if it does not fit in the atlas.
+- `Font::from_system` and `Font::from_bytes` no longer take a list of font sizes.
+- `Font::build_texture` renamed to `Font::update_texture`.
+- `Font::ascent`, `Font::descent`, `Font::text_width` and `Font::layout` now take `&mut self`, as
+  missing glyphs may be loaded on demand.
+- `Painter::new`, `Painter::prepare_render` and `Painter::render` are no longer public.
 - `widgets::Root` is no longer public.
 - `Graphics::font` has been replaced by `Painter::fonts`, which stores fonts by name. The system
   font is registered as `"main"`, which the piment widgets require.
@@ -27,27 +35,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `WidgetCore::release_focus` to leave no widget focused.
 - `Input::focus_gained` and `Input::focus_lost`. When the focus changes, widgets are updated again
   with an input holding only these focus events.
-- Pressing the escape key in a `LineBox` restores the text it had when the edition started. The
-  enter and escape keys, as well as clicking outside of the widget, release the focus.
-- A `LineBox` selects its whole text when it gains the focus. When the focus is gained by a
-  click, the text is selected on release, unless a range has been selected by dragging.
-- `Grid::remove`, `Grid::remove_row`, `Grid::remove_column`, `Grid::clear` and `Grid::resize` to
-  edit a grid after its creation.
+- Support functions to modify Grid layout after creation.
 - Animation support: `WidgetCore::request_animation_frame`, `Input::time` and `Input::time_delta`.
 - `Painter::layout_text` builds a `TextLayout` from a `FontStyle`.
 - Improved line drawing: now with round caps.
+- `LineBox`: pressing escape restores initial value.
 
 ### Changed
 
 - Dynamic loading of missing bitmap font characters and sizes.
-- The text selection of a `LineBox` is only displayed while it has the focus.
-- `Numeric` follows its text box behavior: the edition ends when the text box loses the focus, and
-  the typed value is committed only if the value has changed.
+- `LineBox` selection and focus behavior changes.
+- Text selection of `LineBox` is only displayed while focused.
+- `Numeric` text edit behavior minor change.
 
 ### Fixed
 
-- `Grid::insert` now requests a layout update, so inserted or replaced widgets are positioned
-  immediately.
+- `Grid::insert` now requests a layout update.
 
 ## [0.2.0] - 2026-10-02
 
